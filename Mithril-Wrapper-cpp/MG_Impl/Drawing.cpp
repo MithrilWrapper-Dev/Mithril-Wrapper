@@ -108,7 +108,16 @@ static bool prepare_draw(GLenum mode) {
     // either crash on the SPIR-V pointer or fail pipeline creation silently
     // and leave the screen black. Logging once per program id keeps the log
     // readable when the host retries the same broken shader every frame.
-    if (vs_spirv.empty() || prog->fragmentSpirv.empty()) {
+    // Fallback: if Y-flipped variant is empty but non-flipped exists, use it
+    // (wrong Y orientation but won't skip draws / leave only clear color).
+    const std::vector<uint32_t>* vs_spirv_ptr = &vs_spirv;
+    if (is_default_fbo && vs_spirv.empty() && !prog->vertexSpirv.empty()) {
+        MITHRIL_LOG_WARN("gl", "prepare_draw: program %u Y-flipped SPIR-V empty, "
+                          "falling back to non-flipped variant (%zu words)",
+                          prog->id, prog->vertexSpirv.size());
+        vs_spirv_ptr = &prog->vertexSpirv;
+    }
+    if (vs_spirv_ptr->empty() || prog->fragmentSpirv.empty()) {
         static GLuint last_warned = 0;
         if (last_warned != prog->id) {
             last_warned = prog->id;
@@ -214,7 +223,7 @@ static bool prepare_draw(GLenum mode) {
     if (g_state->colorMask[0][3]) cwm_bits |= 8;
     VkPipeline pipeline = backend_get_or_create_pipeline(
         prog->id,
-        vs_spirv.data(),            (int)vs_spirv.size(),
+        vs_spirv_ptr->data(),            (int)vs_spirv_ptr->size(),
         prog->fragmentSpirv.data(), (int)prog->fragmentSpirv.size(),
         attribs, attrib_count,
         color_formats, color_count,

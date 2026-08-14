@@ -273,6 +273,19 @@ void glLinkProgram(GLuint program) {
                           p->fragmentSpirv.size());
         return;
     }
+
+    // Ensure vertexSpirvYFlipped is non-empty for default framebuffer (FBO 0) draws.
+    // If Y-flipped translation failed and fell back to non-flipped variant which
+    // also failed, vertexSpirvYFlipped could be empty while vertexSpirv is not.
+    // In that case, use the non-flipped SPIR-V as last resort (wrong Y orientation
+    // but won't skip draws / leave only clear color visible).
+    if (p->vertexSpirvYFlipped.empty() && !p->vertexSpirv.empty()) {
+        p->vertexSpirvYFlipped = p->vertexSpirv;
+        MITHRIL_LOG_WARN("program", "vertexSpirvYFlipped was empty for program %u, "
+                          "falling back to non-flipped variant (%zu words)",
+                          program, p->vertexSpirv.size());
+    }
+
     p->linked = true;
     p->infoLog.clear();
 

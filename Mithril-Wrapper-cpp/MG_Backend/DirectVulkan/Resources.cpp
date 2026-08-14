@@ -703,9 +703,24 @@ void stage_and_copy_image(TextureEntry& tex, int level, int x, int y, int z,
     if (tex.format == VK_FORMAT_D24_UNORM_S8_UINT || tex.format == VK_FORMAT_D32_SFLOAT_S8_UINT)
         region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;  // depth aspect only
     region.imageSubresource.mipLevel = level;
-    region.imageSubresource.baseArrayLayer = 0;
-    region.imageSubresource.layerCount = 1;
-    region.imageOffset = { x, y, z };
+    // FIX (Main-menu panorama cubemap GPU fault root cause - face→layer mapping):
+    // For a cubemap the array layer IS the face (0-5). OpenGL faces are supplied
+    // via the 6 face targets; the GL layer passes the face index in the `z`
+    // parameter of glTexImage2D/glTexSubImage2D. The old code hardcoded
+    // baseArrayLayer=0 and put z into imageOffset.z (a 3D-texture offset), so
+    // every face was written into layer 0 and faces 1-5 were never initialized
+    // -> sampling an undefined cubemap layer -> MoltenVK/A11 GPU Address Fault.
+    // Fix: for cubemaps use baseArrayLayer = z (face), zero the image z-offset;
+    // for 3D textures keep z as imageOffset.z and baseArrayLayer = 0.
+    if (tex.target == GL_TEXTURE_CUBE_MAP && z >= 0 && z < 6) {
+        region.imageSubresource.baseArrayLayer = (uint32_t)z;
+        region.imageSubresource.layerCount = 1;
+        region.imageOffset = { x, y, 0 };
+    } else {
+        region.imageSubresource.baseArrayLayer = 0;
+        region.imageSubresource.layerCount = 1;
+        region.imageOffset = { x, y, z };
+    }
     region.imageExtent = { (uint32_t)w, (uint32_t)h, (uint32_t)d };
 
     // Transition the image layout to TRANSFER_DST for the copy.
@@ -735,7 +750,12 @@ void stage_and_copy_image(TextureEntry& tex, int level, int x, int y, int z,
     barrier.subresourceRange.aspectMask = region.imageSubresource.aspectMask;
     barrier.subresourceRange.baseMipLevel = level;
     barrier.subresourceRange.levelCount = 1;
-    barrier.subresourceRange.baseArrayLayer = 0;
+    // FIX (cubemap face upload): the barrier subresourceRange must cover the
+    // layer that the copy below writes into. The old code kept baseArrayLayer=0;
+    // when a cubemap face is uploaded to layer z, the barrier only transitioned
+    // layer 0, so layer z kept an undefined/untracked layout and was read back
+    // without a proper transition -> MoltenVK/A11 GPU fault risk.
+    barrier.subresourceRange.baseArrayLayer = region.imageSubresource.baseArrayLayer;
     barrier.subresourceRange.layerCount = 1;
     vkCmdPipelineBarrier(b->commandBuffer,
                          src_stage_for_layout(oldLayout),
@@ -911,7 +931,13 @@ void transition_image_layout(TextureEntry& tex, VkImageLayout newLayout) {
     barrier.subresourceRange.baseMipLevel = 0;
     barrier.subresourceRange.levelCount = (uint32_t)tex.levels;
     barrier.subresourceRange.baseArrayLayer = 0;
-    barrier.subresourceRange.layerCount = 1;
+    // FIX (Main-menu panorama cubemap GPU fault root cause): this whole-image
+    // transition hardcoded layerCount=1. For a cubemap (arrayLayers=6) only
+    // layer 0 was transitioned; the other 5 layers stayed in an undefined/
+    // stale layout and were later sampled without a proper barrier -> MoltenVK/
+    // A11 GPU address fault. Cover the full layer count for cubemaps (2D and
+    // 3D images keep layerCount=1, so the blast radius is unchanged there).
+    barrier.subresourceRange.layerCount = (tex.target == GL_TEXTURE_CUBE_MAP) ? 6u : 1u;
 
     vkCmdPipelineBarrier(b->commandBuffer,
                          src_stage_for_layout(tex.currentLayout),
@@ -1359,6 +1385,17 @@ VkImage backend_get_or_create_texture(GLuint name, int width, int height, int de
                                       int samples) {
     mithril::vk::Backend* b = mithril::vk::backend();
     if (!b->initialized || name == 0 || width <= 0 || height <= 0) return VK_NULL_HANDLE;
+    // FIX (Main-menu panorama cubemap GPU fault root cause): glTexImage2D may
+    // pass any of the 6 cubemap face targets (GL_TEXTURE_CUBE_MAP_POSITIVE_X..
+    // NEGATIVE_Z). Every downstream cubemap decision here (arrayLayers=6,
+    // VIEW_TYPE_CUBE, upload face->layer) keys off `target == GL_TEXTURE_CUBE_MAP`,
+    // so a face target must be normalized first, or the image is created with
+    // arrayLayers=1 and the 6 faces get crammed into layer 0 + sampled out of
+    // bounds -> MoltenVK/A11 GPU Address Fault.
+    if (target >= GL_TEXTURE_CUBE_MAP_POSITIVE_X &&
+        target <= GL_TEXTURE_CUBE_MAP_NEGATIVE_Z) {
+        target = GL_TEXTURE_CUBE_MAP;
+    }
     VkFormat fmt = mithril::vk::gl_internal_to_vk(internal_format);
     if (fmt == VK_FORMAT_UNDEFINED) {
         // FIX (日志刷屏): 同一不支持的格式会被反复打印。用 static set 去重，
@@ -1723,9 +1760,18 @@ void backend_texture_upload_compressed(GLuint name, int level, int x, int y, int
     region.bufferImageHeight = 0;
     region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     region.imageSubresource.mipLevel = level;
-    region.imageSubresource.baseArrayLayer = 0;
-    region.imageSubresource.layerCount = 1;
-    region.imageOffset = {x, y, z};
+    // FIX (cubemap face upload, same as stage_and_copy_image): face index is
+    // carried in the z parameter; for a cubemap map it to baseArrayLayer
+    // (array layer == face) instead of treating z as a 3D image offset.
+    if (tex.target == GL_TEXTURE_CUBE_MAP && z >= 0 && z < 6) {
+        region.imageSubresource.baseArrayLayer = (uint32_t)z;
+        region.imageSubresource.layerCount = 1;
+        region.imageOffset = {x, y, 0};
+    } else {
+        region.imageSubresource.baseArrayLayer = 0;
+        region.imageSubresource.layerCount = 1;
+        region.imageOffset = {x, y, z};
+    }
     region.imageExtent = {(uint32_t)w, (uint32_t)h, (uint32_t)d};
 
     vkCmdCopyBufferToImage(b->commandBuffer, stagingBuffer, tex.image,

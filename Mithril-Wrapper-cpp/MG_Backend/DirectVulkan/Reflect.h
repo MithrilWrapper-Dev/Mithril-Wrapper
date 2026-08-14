@@ -41,6 +41,14 @@ struct DescriptorBinding {
     VkShaderStageFlags stageMask = 0;
     uint32_t bufferSize = 0;        // UBO size in bytes (0 for images)
     uint32_t descriptorCount = 1;   // array size (1 for non-array samplers)
+    // FIX (Main-menu panorama cubemap GPU fault root cause): GL target type of a
+    // sampled image (2D/Cube/3D/Array), derived from SPIR-V image.dim. The
+    // descriptor binder uses it to pick the texture from the matching texture
+    // unit slot (samplerCube -> CubeMap slot), instead of the old "always
+    // prefer the 2D slot", which fed a 2D view to a samplerCube and triggered a
+    // MoltenVK viewType mismatch. Stores the GLenum value (GL_TEXTURE_2D=0x0DE1
+    // etc.) to keep the header free of a GL dependency.
+    uint32_t samplerTarget = 0x0DE1;  // GL_TEXTURE_2D
     std::string name;               // reflected resource name (for UBO matching)
     std::vector<DescriptorBindingMember> members;  // UBO members (for packed $Global-style blocks)
 };

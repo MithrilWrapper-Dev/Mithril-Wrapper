@@ -61,6 +61,20 @@ TextureTarget textureTargetFromGL(GLenum target) noexcept {
         case GL_TEXTURE_2D:                   return TextureTarget::_2D;
         case GL_TEXTURE_3D:                   return TextureTarget::_3D;
         case GL_TEXTURE_CUBE_MAP:             return TextureTarget::CubeMap;
+        // FIX (Main-menu panorama cubemap GPU fault root cause - face targets):
+        // The GL spec allows a cubemap to be uploaded one face at a time using
+        // the 6 face targets (GL_TEXTURE_CUBE_MAP_POSITIVE_X .. NEGATIVE_Z).
+        // Minecraft uploads the 6 panorama faces exactly this way. The old code
+        // did not recognize these targets -> bound_texture_for_target returned
+        // nullptr -> every face upload was silently dropped -> the cubemap was
+        // fully empty -> sampling uninitialized texture layers on A11/MoltenVK
+        // -> GPU Address Fault (zink uploads the faces, hence it renders).
+        case GL_TEXTURE_CUBE_MAP_POSITIVE_X:
+        case GL_TEXTURE_CUBE_MAP_NEGATIVE_X:
+        case GL_TEXTURE_CUBE_MAP_POSITIVE_Y:
+        case GL_TEXTURE_CUBE_MAP_NEGATIVE_Y:
+        case GL_TEXTURE_CUBE_MAP_POSITIVE_Z:
+        case GL_TEXTURE_CUBE_MAP_NEGATIVE_Z:  return TextureTarget::CubeMap;
         case GL_TEXTURE_RECTANGLE:            return TextureTarget::Rectangle;
         case GL_TEXTURE_2D_MULTISAMPLE:       return TextureTarget::_2DMultisample;
         case GL_TEXTURE_BUFFER:               return TextureTarget::Buffer;

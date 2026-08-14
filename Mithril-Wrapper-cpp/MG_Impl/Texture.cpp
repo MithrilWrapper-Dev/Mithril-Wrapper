@@ -100,9 +100,25 @@ static mithril::Texture* bound_texture_for_target(GLenum target) {
     if (unit >= mithril::kMaxTextureUnits) return nullptr;
     GLuint id = g_state->textureBindings[unit][(int)tt].name;
     mithril::Texture* t = mithril::state_get_texture(id);
-    if (t && t->target != target) {
-        mithril::state_set_error(GL_INVALID_OPERATION);
-        return nullptr;
+    if (t) {
+        // FIX (Main-menu panorama cubemap GPU fault root cause): the target
+        // consistency check must normalize the 6 cubemap face targets
+        // (GL_TEXTURE_CUBE_MAP_POSITIVE_X .. NEGATIVE_Z). The texture was
+        // bound as GL_TEXTURE_CUBE_MAP but a face is uploaded with a face
+        // target, so a raw GLenum comparison rejects the upload with
+        // GL_INVALID_OPERATION -> every cubemap face is silently dropped ->
+        // the panorama is empty -> sampling uninitialized layers -> GPU fault.
+        // Compare through textureTargetFromGL instead (face and CUBE_MAP both
+        // resolve to TextureTarget::CubeMap).
+        bool same = (t->target == target);
+        if (!same) {
+            mithril::TextureTarget t1 = mithril::textureTargetFromGL(t->target);
+            same = (t1 != mithril::TextureTarget::Count && t1 == tt);
+        }
+        if (!same) {
+            mithril::state_set_error(GL_INVALID_OPERATION);
+            return nullptr;
+        }
     }
     return t;
 }
@@ -166,7 +182,19 @@ void glTexImage2D(GLenum target, GLint level, GLint internalFormat,
             g_state->pixelStore.unpackImageHeight,
             g_state->pixelStore.unpackSkipImages
         };
-        backend_texture_upload(t->id, level, 0, 0, 0, width, height, 1,
+        // FIX (Main-menu panorama cubemap GPU fault root cause): when the target
+        // is a cubemap face (GL_TEXTURE_CUBE_MAP_POSITIVE_X .. NEGATIVE_Z),
+        // pass the face index (0-5) as z. The backend's stage_and_copy_image
+        // maps z to VkBufferImageCopy's baseArrayLayer (cubemap array layer ==
+        // face). The old code always passed z=0, cramming all 6 faces into
+        // layer 0 (and, before the face-target fix, dropping the uploads
+        // entirely) -> the panorama was empty.
+        GLint uploadZ = 0;
+        if (target >= GL_TEXTURE_CUBE_MAP_POSITIVE_X &&
+            target <= GL_TEXTURE_CUBE_MAP_NEGATIVE_Z) {
+            uploadZ = (GLint)(target - GL_TEXTURE_CUBE_MAP_POSITIVE_X);
+        }
+        backend_texture_upload(t->id, level, 0, 0, uploadZ, width, height, 1,
                                format, type, pixels, &unpack,
                                /*is_full_upload=*/1);
     }
@@ -273,7 +301,14 @@ void glTexSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yoffset,
         g_state->pixelStore.unpackImageHeight,
         g_state->pixelStore.unpackSkipImages
     };
-    backend_texture_upload(t->id, level, xoffset, yoffset, 0,
+    // FIX (cubemap face upload, same as glTexImage2D): face target -> z = face
+    // index (the backend maps it to baseArrayLayer).
+    GLint subZ = 0;
+    if (target >= GL_TEXTURE_CUBE_MAP_POSITIVE_X &&
+        target <= GL_TEXTURE_CUBE_MAP_NEGATIVE_Z) {
+        subZ = (GLint)(target - GL_TEXTURE_CUBE_MAP_POSITIVE_X);
+    }
+    backend_texture_upload(t->id, level, xoffset, yoffset, subZ,
                            width, height, 1, format, type, pixels, &unpack,
                            /*is_full_upload=*/0);
 }
@@ -358,7 +393,14 @@ void glCompressedTexImage2D(GLenum target, GLint level, GLenum internalformat,
     if (t->levels < level + 1) t->levels = level + 1;
     backend_get_or_create_texture(t->id, t->width, t->height, 1, t->levels,
                                   internalformat, target, 1);
-    backend_texture_upload_compressed(t->id, level, 0, 0, 0, width, height, 1,
+    // FIX (cubemap face upload, same as glTexImage2D): face target -> z = face
+    // index (the backend maps it to baseArrayLayer).
+    GLint cz = 0;
+    if (target >= GL_TEXTURE_CUBE_MAP_POSITIVE_X &&
+        target <= GL_TEXTURE_CUBE_MAP_NEGATIVE_Z) {
+        cz = (GLint)(target - GL_TEXTURE_CUBE_MAP_POSITIVE_X);
+    }
+    backend_texture_upload_compressed(t->id, level, 0, 0, cz, width, height, 1,
                                       internalformat, imageSize, data,
                                       /*is_full_upload=*/1);
 }

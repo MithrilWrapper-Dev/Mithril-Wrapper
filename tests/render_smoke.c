@@ -852,6 +852,103 @@ int main(int argc, char** argv) {
               "multi-frame sampled+UBO stability: %d/%d frames rendered correct color after glFinish",
               stableFrames, NFRAMES);
         CHECK(getError() == GL_NO_ERROR, "multi-frame test leaves no error");
+
+        /* =====================================================================
+         * 4k) cubemap 判别测试：6 face 各色上传 + samplerCube 采样
+         * =====================================================================
+         * 目标：验证 panorama（主菜单背景）cubemap 全链路的 4 个修复点——
+         *   1) textureTargetFromGL 识别 6 个 face target（face 上传不被静默丢弃）；
+         *   2) face 数据 z(face 索引) 正确映射到 Vulkan baseArrayLayer（layer1-5
+         *      被初始化，不再全落 layer 0）；
+         *   3) mipmap 覆盖全部 6 层（本用例单级 GL_LINEAR 隔离 face→layer）；
+         *   4) samplerCube 按 samplerTarget=CubeMap 从 CubeMap slot 绑定纹理。
+         * 判别：+X 面传红色、-X 面传绿色。采样 +X 应得红、采样 -X 应得绿。
+         *   - 修复前（face 全落 layer0 / 上传被丢弃）：两方向采样同一层数据，
+         *     或纹理全空 → -X 读回不是绿（黑或红）→ 本用例 FAIL。
+         *   - 修复后：两方向读回各自 face 颜色 → 本用例 PASS。 */
+        {
+            GLuint cubeTex = 0;
+            genTextures(1, &cubeTex);
+            CHECK(cubeTex != 0, "genTextures allocated cubemap texture (%u)", cubeTex);
+            activeTexture(GL_TEXTURE0);
+            bindTexture(GL_TEXTURE_CUBE_MAP, cubeTex);
+            /* 6 个 face 各 2x2 纯色：+X 红 / -X 绿 / +Y 蓝 / -Y 黄 / +Z 白 / -Z 品红 */
+            static const GLenum faces[6] = {
+                GL_TEXTURE_CUBE_MAP_POSITIVE_X, GL_TEXTURE_CUBE_MAP_NEGATIVE_X,
+                GL_TEXTURE_CUBE_MAP_POSITIVE_Y, GL_TEXTURE_CUBE_MAP_NEGATIVE_Y,
+                GL_TEXTURE_CUBE_MAP_POSITIVE_Z, GL_TEXTURE_CUBE_MAP_NEGATIVE_Z,
+            };
+            static const GLubyte faceColors[6][4] = {
+                { 255,  0,  0, 255 },  /* +X red  */
+                {   0,255,  0, 255 },  /* -X green*/
+                {   0,  0,255, 255 },  /* +Y blue */
+                { 255,255,  0, 255 },  /* -Y yellow */
+                { 255,255,255, 255 },  /* +Z white */
+                { 255,  0,255, 255 },  /* -Z magenta */
+            };
+            for (int f = 0; f < 6; ++f) {
+                const GLubyte quad[16] = { faceColors[f][0],faceColors[f][1],faceColors[f][2],faceColors[f][3],
+                                           faceColors[f][0],faceColors[f][1],faceColors[f][2],faceColors[f][3],
+                                           faceColors[f][0],faceColors[f][1],faceColors[f][2],faceColors[f][3],
+                                           faceColors[f][0],faceColors[f][1],faceColors[f][2],faceColors[f][3] };
+                texImage2D(faces[f], 0, GL_RGBA8, 2, 2, 0, GL_RGBA, GL_UNSIGNED_BYTE, quad);
+            }
+            texParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+            texParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            texParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+            texParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+            CHECK(getError() == GL_NO_ERROR, "cubemap 6-face upload + params leaves no error");
+
+            /* 三个 program 分别采样 +X、-X、+Z 方向（attrib0Vs 已验证能画）。 */
+            static const struct { const char* tag; const char* dir; } dirs[3] = {
+                { "+X", "vec3( 1.0, 0.0, 0.0)" },
+                { "-X", "vec3(-1.0, 0.0, 0.0)" },
+                { "+Z", "vec3( 0.0, 0.0, 1.0)" },
+            };
+            static const GLubyte expect[3][4] = {
+                { 255,  0,  0, 255 },  /* +X red */
+                {   0,255,  0, 255 },  /* -X green */
+                { 255,255,255, 255 },  /* +Z white */
+            };
+            for (int d = 0; d < 3; ++d) {
+                char fsSrc[256];
+                snprintf(fsSrc, sizeof(fsSrc),
+                         "#version 330 core\n"
+                         "out vec4 fragColor;\n"
+                         "uniform samplerCube uCube;\n"
+                         "void main(){ fragColor = texture(uCube, %s); }\n",
+                         dirs[d].dir);
+                GLuint cFs = createShader(GL_FRAGMENT_SHADER);
+                shaderSource(cFs, 1, &(const char*){ fsSrc }, NULL);
+                compileShader(cFs);
+                GLuint cProg = createProgram();
+                attachShader(cProg, attrib0Vs);
+                attachShader(cProg, cFs);
+                linkProgram(cProg);
+                deleteShader(cFs);
+                GLint cLoc = getUniformLocation(cProg, "uCube");
+                CHECK(cLoc >= 0, "cubemap(%s) getUniformLocation(uCube)=%d", dirs[d].tag, cLoc);
+                useProgram(cProg);
+                activeTexture(GL_TEXTURE0);
+                bindTexture(GL_TEXTURE_CUBE_MAP, cubeTex);
+                if (cLoc >= 0) uniform1i(cLoc, 0);
+                bindVertexArray(texVao);
+                clearColor(0.0f, 0.0f, 0.0f, 0.0f);
+                clear(GL_COLOR_BUFFER_BIT);
+                drawArrays(GL_TRIANGLES, 0, 3);
+                finish();
+                unsigned char cp[4] = {0,0,0,0};
+                readPixels(R / 2, C / 2, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, cp);
+                int dr = expect[d][0], dg = expect[d][1], db = expect[d][2];
+                CHECK(cp[0] >= dr - 20 && cp[0] <= dr + 20 &&
+                      cp[1] >= dg - 20 && cp[1] <= dg + 20 &&
+                      cp[2] >= db - 20 && cp[2] <= db + 20 && cp[3] > 128,
+                      "cubemap(%s) face sample=%s readback=(%d,%d,%d,%d) — face->layer + samplerCube OK",
+                      dirs[d].tag, dirs[d].dir, cp[0], cp[1], cp[2], cp[3]);
+                deleteProgram(cProg);
+            }
+            CHECK(getError() == GL_NO_ERROR, "cubemap sample tests leave no error");
+        }
     }
 
     dlclose(h);

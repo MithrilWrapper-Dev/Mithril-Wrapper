@@ -932,7 +932,22 @@ void bind_program_descriptors(GLuint program, VkPipelineBindPoint bindPoint) {
             }
             GLuint tex_id = 0;
             if (unit >= 0 && unit < mithril::kMaxTextureUnits) {
-                tex_id = mithril::g_state->boundTextureForUnit(unit);
+                // FIX (Main-menu panorama cubemap GPU fault root cause - sampler
+                // type): pick the texture from the slot matching the sampler's
+                // declared type (db.samplerTarget, reflected from SPIR-V
+                // image.dim: samplerCube -> CubeMap slot). The old
+                // boundTextureForUnit(unit) unconditionally preferred the 2D
+                // slot: on the main menu unit 0 often still holds a GUI 2D
+                // binding, so the panorama's samplerCube got a 2D view ->
+                // MoltenVK viewType mismatch -> undefined sampling / GPU fault.
+                mithril::TextureTarget tt = mithril::textureTargetFromGL(db.samplerTarget);
+                if (tt != mithril::TextureTarget::Count) {
+                    tex_id = mithril::g_state->boundTextureForUnit((GLuint)unit, tt);
+                }
+                if (tex_id == 0 && tt != mithril::TextureTarget::_2D) {
+                    // Target slot unbound: fall back to any slot (rare shaders).
+                    tex_id = mithril::g_state->boundTextureForUnit((GLuint)unit);
+                }
             }
             /* No texture on that unit.
              *

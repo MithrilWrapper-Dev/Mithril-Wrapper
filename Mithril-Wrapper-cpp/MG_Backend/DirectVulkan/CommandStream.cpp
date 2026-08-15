@@ -110,6 +110,13 @@ struct EncoderState {
     // MoltenVK / IOSurface UAF crashes).
     bool hasCommands = false;
 
+    // ---- B1 first-frame diagnostic: per-frame recorded draw count ----
+    // Incremented in draw_recording_allowed whenever a vkCmdDraw* is actually
+    // recorded, reset at each fresh command-buffer begin (frame boundary).
+    // Read by eglSwapBuffers' B1 present log to distinguish "draws dropped"
+    // (count 0) from "draws recorded but fragments not visible" (count > 0).
+    uint32_t drawCount = 0;
+
     // ---- Root cause Y (CRITICAL): user-FBO attachment layout transitions ----
     // VK_KHR_dynamic_rendering's vkCmdBeginRendering does NOT auto-transition
     // attachment image layouts — it only validates that each image is in the
@@ -399,6 +406,8 @@ bool draw_recording_allowed(const char* who) {
         }
         return false;
     }
+    // B1 first-frame diagnostic: a real draw was recorded this frame.
+    e.drawCount++;
     return true;
 }
 
@@ -423,6 +432,8 @@ void set_clear_color(float r, float g, float b, float a) {
 void set_clear_depth(double d) { encoder().clearDepth = d; }
 void set_clear_stencil(int s)  { encoder().clearStencil = s; }
 void set_load_clear(bool clear){ encoder().loadClear = clear; }
+
+unsigned int backend_get_recorded_draws() { return encoder().drawCount; }
 
 // GL 4.3 ARB_invalidate_subdata: mark attachments for discard (storeOp=DONT_CARE)
 // in the next begin_render_pass. One-shot: cleared after begin_render_pass applies.
@@ -564,6 +575,7 @@ bool ensure_command_buffer_recording() {
     }
     b->commandBufferRecording = true;
     encoder().hasCommands = false;  // fresh buffer, no commands yet
+    encoder().drawCount = 0;        // B1: new frame, draw counter starts at 0
 
     // FIX (Invalid Resource 根因 - per-frame transient staging arena rewind):
     // 到达这里意味着 command buffer 被重置+重新 begin（新帧开始）。

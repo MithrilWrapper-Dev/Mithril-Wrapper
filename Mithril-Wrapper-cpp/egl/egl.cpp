@@ -44,6 +44,7 @@
 #include "../MG_Impl/EGLConfig.h"
 #include "../MG_Impl/Log.h"
 #include "../MG_Backend/DirectVulkan/Device.h"
+#include "../MG_Backend/DirectVulkan/CommandStream.h"  // backend_get_recorded_draws (B1)
 #include <EGL/egl.h>
 
 #include "EglInternal.h"   // shared internal handle types + state + swapchain helper decls
@@ -678,12 +679,17 @@ EGLBoolean eglSwapBuffers(EGLDisplay dpy, EGLSurface surface) {
     if (mithril::g_state) {
         ++mithril::g_state->presentedFrames;
         if (mithril::g_state->presentedFrames <= 60) {
-            MITHRIL_LOG_WARN("vk-diag", "B1 present frame #%u clearColor=(%.3f %.3f %.3f %.3f)",
+            // B1: log the frame's recorded draw count. draw>0 => draws reached
+            // the command buffer but fragments aren't visible (depth/viewport/
+            // shader); draw==0 => draws were dropped before recording.
+            unsigned int draws = mithril::vk::backend_get_recorded_draws();
+            MITHRIL_LOG_WARN("vk-diag", "B1 present frame #%u clearColor=(%.3f %.3f %.3f %.3f) draws=%u",
                              mithril::g_state->presentedFrames,
                              mithril::g_state->clearColor[0],
                              mithril::g_state->clearColor[1],
                              mithril::g_state->clearColor[2],
-                             mithril::g_state->clearColor[3]);
+                             mithril::g_state->clearColor[3],
+                             draws);
         }
     }
 

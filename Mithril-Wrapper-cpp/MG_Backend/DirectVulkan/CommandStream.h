@@ -37,6 +37,12 @@ void set_clear_depth(double d);
 void set_clear_stencil(int s);
 void set_load_clear(bool clear);   // true = CLEAR (glClear), false = LOAD
 
+// B1 first-frame diagnostic: number of vkCmdDraw* recorded in the current
+// frame (reset at each fresh command-buffer begin). 0 => draws were dropped;
+// >0 => draws were recorded but fragments may still be invisible (depth/
+// viewport/shader). Read by eglSwapBuffers' B1 present log.
+unsigned int backend_get_recorded_draws();
+
 /*
  * Register the swapchain whose currently-acquired image is the render target
  * for framebuffer 0. Called by EGL (install_surface_on_state) after each

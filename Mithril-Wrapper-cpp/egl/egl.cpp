@@ -672,6 +672,21 @@ EGLBoolean eglSwapBuffers(EGLDisplay dpy, EGLSurface surface) {
     // size on the next swap.
     swapchain_present(s);
 
+    // B1 first-frame diagnostic: 记录已呈现帧计数 + 本帧 GL clear 颜色。
+    // 用于真机确认首帧到底有没有出现过红色/黑色 clear 值，以及红屏是否由
+    // glClearColor 驱动。仅前 60 帧输出，避免刷屏。
+    if (mithril::g_state) {
+        ++mithril::g_state->presentedFrames;
+        if (mithril::g_state->presentedFrames <= 60) {
+            MITHRIL_LOG_WARN("vk-diag", "B1 present frame #%u clearColor=(%.3f %.3f %.3f %.3f)",
+                             mithril::g_state->presentedFrames,
+                             mithril::g_state->clearColor[0],
+                             mithril::g_state->clearColor[1],
+                             mithril::g_state->clearColor[2],
+                             mithril::g_state->clearColor[3]);
+        }
+    }
+
     // Rebuild the swapchain if (a) the native window was resized between
     // frames, or (b) the backend marked the swapchain dead via
     // backend_swapchain_needs_rebuild (fatal Vulkan error: GPU OOM, surface

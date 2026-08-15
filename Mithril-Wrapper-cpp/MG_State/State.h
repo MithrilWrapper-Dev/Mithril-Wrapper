@@ -755,6 +755,11 @@ struct GLState {
     // ---- Render state version (for future backend dirty tracking) ----
     uint16_t renderVersion = 0;
     void bumpRenderVersion() { ++renderVersion; }
+
+    // ---- First-frame diagnostic (B1) ----
+    // 已呈现帧计数，供首帧诊断聚合使用（仅前 N 帧输出，避免刷屏）。
+    // 由 CommandStream.cpp 的 present 路径自增；Drawing.cpp 读取。
+    uint32_t presentedFrames = 0;
 };
 
 // ---- Thread-local current context pointer ----

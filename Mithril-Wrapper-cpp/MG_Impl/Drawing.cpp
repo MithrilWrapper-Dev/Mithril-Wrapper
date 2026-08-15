@@ -50,6 +50,7 @@
 #include "Framebuffer.h"
 
 #include <algorithm>
+#include <cstdio>
 #include <cstring>
 
 extern "C" {
@@ -87,10 +88,41 @@ extern "C" {
  * Returning a status here — and re-checking it in the backend, see
  * backend_draw_* in CommandStream.cpp — makes that guarantee structural.
  */
+
+// ---- B1 first-frame diagnostic ----
+// 真机首帧红屏/黑屏排障：在最初的 N 个已呈现帧内，把 prepare_draw 的每个
+// 静默早退路径（缺 program / 空 SPIR-V / 无颜色附件 / 管线创建失败）都打一
+// 条日志，便于一次性拿到「首几帧到底哪一环失败」。帧计数由 eglSwapBuffers
+// 的 present 路径自增（g_state->presentedFrames），这里只读。
+static bool first_frame_diag() {
+    return g_state && g_state->presentedFrames <= 60;
+}
+
+// 把 VkFormat 数组压成一行可读字符串（避免逐条日志刷屏）。
+static void diag_log_formats(const VkFormat fmts[8], int count, VkFormat depth) {
+    char buf[256];
+    int off = 0;
+    off += snprintf(buf + off, sizeof(buf) - (size_t)off, "[");
+    for (int i = 0; i < count && off < (int)sizeof(buf) - 32; ++i) {
+        off += snprintf(buf + off, sizeof(buf) - (size_t)off, "%s%d",
+                        i ? "," : "", (int)fmts[i]);
+    }
+    snprintf(buf + off, sizeof(buf) - (size_t)off, "] depth=%d", (int)depth);
+    MITHRIL_LOG_ERROR("vk-diag", "%s", buf);
+}
+
 static bool prepare_draw(GLenum mode) {
     // Resolve current program + its SPIR-V.
     mithril::Program* prog = mithril::state_get_program(g_state->currentProgram);
-    if (!prog || !prog->linked) return false;
+    if (!prog || !prog->linked) {
+        if (first_frame_diag()) {
+            MITHRIL_LOG_ERROR("vk-diag", "B1 draw skipped: program %u %s "
+                              "(currentProgram=%u)", g_state->currentProgram,
+                              (!prog) ? "not found" : "not linked",
+                              g_state->currentProgram);
+        }
+        return false;
+    }
 
     // Determine whether we are drawing to the default framebuffer (FBO 0) or a
     // user-created FBO. This selects the Y-flipped vs non-flipped vertex SPIR-V
@@ -144,7 +176,13 @@ static bool prepare_draw(GLenum mode) {
     if (color_count <= 0) {
         bool any_color = false;
         for (int i = 0; i < 8; ++i) if (colors[i] != VK_NULL_HANDLE) { any_color = true; break; }
-        if (!any_color) return false;
+        if (!any_color) {
+            if (first_frame_diag()) {
+                MITHRIL_LOG_ERROR("vk-diag", "B1 draw skipped: no color attachment "
+                                  "(currentDrawFBO=%u size=%dx%d)", g_state->currentDrawFBO, w, h);
+            }
+            return false;
+        }
     }
 
     // Compute color attachment VkFormats.
@@ -241,7 +279,15 @@ static bool prepare_draw(GLenum mode) {
     // call — see the root cause AI comment on this function. Note that the
     // render pass has NOT been begun at this point (that happens below), so
     // a draw issued here would be recorded outside any render-pass instance.
-    if (pipeline == VK_NULL_HANDLE) return false;
+    if (pipeline == VK_NULL_HANDLE) {
+        if (first_frame_diag()) {
+            MITHRIL_LOG_ERROR("vk-diag", "B1 draw skipped: pipeline creation FAILED "
+                              "prog=%u is_default=%d colors=%d depth_format=%d",
+                              prog->id, (int)is_default_fbo, color_count, (int)depth_format);
+            diag_log_formats(color_formats, color_count, depth_format);
+        }
+        return false;
+    }
 
     // FIX (root cause Y, CRITICAL): Register user-FBO attachment tex_ids so
     // begin_render_pass can barrier their images to attachment-optimal and

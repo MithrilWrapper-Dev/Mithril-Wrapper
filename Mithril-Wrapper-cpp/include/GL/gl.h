@@ -28,6 +28,16 @@
 #ifndef GL_TEXTURE_DEPTH
 #define GL_TEXTURE_DEPTH             0x8071
 #endif
+
+/*
+ * Pixel-pack (glReadPixels) state constants. GL_PIXEL_PACK_BUFFER_BINDING is
+ * standard GL 2.1/3.0 (0x88ED) but absent from our minimal glcorearb.h, which
+ * made any consumer that saves/restores the bound PBO before a readback fail
+ * to compile with "use of undeclared identifier".
+ */
+#ifndef GL_PIXEL_PACK_BUFFER_BINDING
+#define GL_PIXEL_PACK_BUFFER_BINDING 0x88ED
+#endif
 #ifndef GL_TEXTURE_INTERNAL_FORMAT
 #define GL_TEXTURE_INTERNAL_FORMAT   0x1003
 #endif

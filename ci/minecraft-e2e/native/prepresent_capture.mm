@@ -2,6 +2,7 @@
 
 #include <dlfcn.h>
 #include <cerrno>
+#include <atomic>
 #include <cstdio>
 #include <cstdlib>
 #include <string>
@@ -49,11 +50,36 @@ bool write_atomic(const std::string& path, const void* data, size_t size) {
 
 extern "C" void mithril_e2e_capture_before_present(int width, int height, void* mithril_handle) {
     const std::string root = env_string("MITHRIL_E2E_ROOT");
+
+    // One-shot heartbeat. This seam returns silently on several paths (empty
+    // root, degenerate size, null handle, missing request file), and when that
+    // happens it leaves NO evidence at all -- which is exactly how a missing
+    // capture turned into an opaque RUNTIME_MINECRAFT_CAPTURE_TIMEOUT with no
+    // way to tell whether the seam never ran, was misconfigured, or merely
+    // never saw a request. Publish its own view of its configuration once.
+    static std::atomic<bool> announced{false};
+    if (!announced.exchange(true)) {
+        char detail[512];
+        std::snprintf(detail, sizeof(detail),
+                      "root=%s width=%d height=%d handle=%s",
+                      root.empty() ? "<empty>" : root.c_str(),
+                      width, height, mithril_handle ? "set" : "NULL");
+        append_event(root, "capture_seam_ready", 0, detail);
+    }
+
     if (root.empty() || width <= 1 || height <= 1 || !mithril_handle) return;
 
     const std::string request = root + "/render/prepresent-request.txt";
     FILE* request_file = std::fopen(request.c_str(), "r");
-    if (!request_file) return;
+    if (!request_file) {
+        // Rate-limited: the seam runs on EVERY swap (one run presented 9720
+        // frames), so log the first miss and then only occasionally.
+        static std::atomic<int> misses{0};
+        if (misses.fetch_add(1) % 500 == 0) {
+            append_event(root, "capture_no_request", 0, request.c_str());
+        }
+        return;
+    }
 
     int frame = 0;
     if (std::fscanf(request_file, "%d", &frame) != 1 || frame <= 0) {

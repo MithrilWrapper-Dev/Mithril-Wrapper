@@ -225,6 +225,21 @@ jobs:
           gradle --version > "$E2E_ROOT/gradle-version.txt" 2>&1
           mkdir -p "$E2E_ROOT/render"
 
+          # The bridge reads its configuration from the environment. build.gradle
+          # sets these via the run task's environment(...), but that is
+          # best-effort (wrapped in try/catch for Loom compatibility) and Gradle
+          # does not guarantee forwarding to the forked game JVM. Exporting here
+          # is authoritative: gradle inherits our environment and hands it to the
+          # child, so the bridge sees the real evidence root and the real dylib
+          # path instead of falling back to the global symbol scope -- where
+          # dlsym("glGetIntegerv") can fail when LWJGL loaded the dylib
+          # RTLD_LOCAL, which would make capture report a missing GL symbol.
+          export MITHRIL_E2E_ROOT="$E2E_ROOT"
+          export MITHRIL_E2E_MITHRIL_DYLIB="${{ steps.mithril.outputs.dylib }}"
+          export MITHRIL_E2E_GLFW_DELEGATE="${{ steps.bridge.outputs.glfw_real }}"
+          echo "[mithril-e2e] MITHRIL_E2E_ROOT=$MITHRIL_E2E_ROOT" \
+            >> "$E2E_ROOT/minecraft-client-run.log"
+
           # Start the game in the background. We deliberately do NOT wait for it
           # to exit: the E2E client mod is never loaded by Fabric (the loader's
           # mod list contains only the 54 Fabric API/loader mods), so it never
@@ -467,6 +482,15 @@ jobs:
           cp "$E2E_ROOT"/*.log ci/diagnostics/ 2>/dev/null
           cp "$E2E_ROOT"/*.json ci/diagnostics/ 2>/dev/null
           cp "$E2E_ROOT"/*.txt ci/diagnostics/ 2>/dev/null
+          cp "$E2E_ROOT"/*.jsonl ci/diagnostics/ 2>/dev/null
+          # The pixel capture lives under render/ and the bridge's diagnostics
+          # are native-events.jsonl. Only top-level *.log/*.json/*.txt used to be
+          # mirrored, so a RUNTIME_MINECRAFT_CAPTURE_TIMEOUT gave no way to tell
+          # whether the capture never ran, failed, or simply was not collected.
+          # Mirror the capture directory and list it explicitly.
+          mkdir -p ci/diagnostics/render
+          cp -R "$E2E_ROOT"/render/. ci/diagnostics/render/ 2>/dev/null
+          ls -la "$E2E_ROOT"/render > ci/diagnostics/render-listing.txt 2>&1
           git add -f ci/diagnostics
           if git diff --cached --quiet; then
             echo "no diagnostics to publish"

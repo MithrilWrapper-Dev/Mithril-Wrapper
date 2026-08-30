@@ -80,6 +80,13 @@ void* delegate_handle() {
         void* h = nullptr;
         if (!path.empty()) h = dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL);
         if (!h) h = dlopen("libglfw.3.dylib", RTLD_NOW | RTLD_LOCAL);
+        // Fall back to the absolute Homebrew locations. The env var is only set
+        // when the Gradle run task supports environment(...); without this the
+        // bridge would depend on libglfw being on the dyld search path, which it
+        // is not for a brew keg-only install.
+        if (!h) h = dlopen("/opt/homebrew/opt/glfw/lib/libglfw.3.dylib", RTLD_NOW | RTLD_LOCAL);
+        if (!h) h = dlopen("/opt/homebrew/lib/libglfw.3.dylib", RTLD_NOW | RTLD_LOCAL);
+        if (!h) h = dlopen("/usr/local/opt/glfw/lib/libglfw.3.dylib", RTLD_NOW | RTLD_LOCAL);
         if (!h) std::fprintf(stderr, "[mithril-e2e] failed to load delegate GLFW: %s\n", dlerror());
         return h;
     }();
@@ -96,14 +103,26 @@ MithrilApi& mithril() {
     static MithrilApi api = [] {
         MithrilApi m;
         std::string path = getenv_string("MITHRIL_E2E_MITHRIL_DYLIB");
-        if (path.empty()) {
-            std::fprintf(stderr, "[mithril-e2e] MITHRIL_E2E_MITHRIL_DYLIB is unset\n");
-            return m;
+        if (!path.empty()) {
+            m.handle = dlopen(path.c_str(), RTLD_NOW | RTLD_GLOBAL);
+            if (!m.handle) {
+                std::fprintf(stderr, "[mithril-e2e] dlopen(%s) failed: %s\n",
+                             path.c_str(), dlerror());
+            }
         }
-        m.handle = dlopen(path.c_str(), RTLD_NOW | RTLD_GLOBAL);
         if (!m.handle) {
-            std::fprintf(stderr, "[mithril-e2e] dlopen(%s) failed: %s\n", path.c_str(), dlerror());
-            return m;
+            // Fall back to the global symbol scope. LWJGL has already loaded
+            // libmithril.dylib because of -Dorg.lwjgl.opengl.libname, so the EGL
+            // and GL entry points are resolvable from the process-wide namespace.
+            // This keeps the bridge working even when the run task could not
+            // export MITHRIL_E2E_MITHRIL_DYLIB.
+            m.handle = dlopen(nullptr, RTLD_NOW | RTLD_GLOBAL);
+            if (!m.handle) {
+                std::fprintf(stderr,
+                             "[mithril-e2e] MITHRIL_E2E_MITHRIL_DYLIB is unset and the "
+                             "global scope is unavailable\n");
+                return m;
+            }
         }
 #define LOAD_EGL(field, name) m.field = reinterpret_cast<decltype(m.field)>(dlsym(m.handle, #name))
         LOAD_EGL(getDisplay, eglGetDisplay);

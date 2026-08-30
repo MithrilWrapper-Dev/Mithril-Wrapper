@@ -227,7 +227,7 @@ jobs:
             -PglfwBridge="${{ steps.bridge.outputs.bridge }}" \
             -PglfwDelegate="${{ steps.bridge.outputs.glfw_real }}" \
             -PevidenceRoot="$E2E_ROOT" \
-            runProductionClientGameTest 2>&1 | tee "$E2E_ROOT/minecraft-client-run.log"
+            runClient 2>&1 | tee "$E2E_ROOT/minecraft-client-run.log"
           rc=${PIPESTATUS[0]}
 
           if [[ $rc -eq 0 ]]; then

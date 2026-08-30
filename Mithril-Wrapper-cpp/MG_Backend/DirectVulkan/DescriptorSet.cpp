@@ -988,8 +988,40 @@ void bind_program_descriptors(GLuint program, VkPipelineBindPoint bindPoint) {
                 GLenum wrapS = tex ? (GLenum)tex->wrapS : GL_REPEAT;
                 GLenum wrapT = tex ? (GLenum)tex->wrapT : GL_REPEAT;
                 GLenum wrapR = tex ? (GLenum)tex->wrapR : GL_REPEAT;
+                /* FIX (GL 3.3 sampler objects were ignored): glBindSampler binds a
+                 * sampler object to a texture unit, and its parameters (filter /
+                 * wrap / min LOD / LOD bias / compare mode) must override the
+                 * texture's embedded parameters. The previous code never looked at
+                 * g_state->samplerBindings[], so everything the host set through a
+                 * sampler object was silently dropped. */
+                GLint cmpEnable = 0;
+                GLint cmpOp = GL_ALWAYS;
+                GLfloat sMinLod = 0.0f;
+                GLfloat sLodBias = 0.0f;
+                {
+                    GLuint sname = 0;
+                    if (unit >= 0 && unit < mithril::kMaxTextureUnits)
+                        sname = mithril::g_state->samplerBindings[unit];
+                    if (sname) {
+                        mithril::Sampler* s = mithril::state_get_sampler(sname);
+                        if (s) {
+                            minF = (GLenum)s->minFilter;
+                            magF = (GLenum)s->magFilter;
+                            wrapS = (GLenum)s->wrapS;
+                            wrapT = (GLenum)s->wrapT;
+                            wrapR = (GLenum)s->wrapR;
+                            sMinLod  = s->minLod;
+                            sLodBias = s->lodBias;
+                            if (s->compareMode != 0) {  /* GL_NONE == 0 */
+                                cmpEnable = 1;
+                                cmpOp = s->compareFunc;
+                            }
+                        }
+                    }
+                }
                 samp = backend_get_or_create_sampler(
-                    tex_id, minF, magF, wrapS, wrapT, wrapR, nullptr);
+                    tex_id, minF, magF, wrapS, wrapT, wrapR, nullptr,
+                    cmpEnable, cmpOp, sMinLod, sLodBias);
             }
             // FIX (root cause L): if no texture is bound (or the bound texture
             // has no view/sampler), use the process-wide default 1x1 black
@@ -1203,8 +1235,40 @@ void bind_program_descriptors(GLuint program, VkPipelineBindPoint bindPoint) {
                 GLenum wrapS = tex ? (GLenum)tex->wrapS : GL_CLAMP_TO_EDGE;
                 GLenum wrapT = tex ? (GLenum)tex->wrapT : GL_CLAMP_TO_EDGE;
                 GLenum wrapR = tex ? (GLenum)tex->wrapR : GL_CLAMP_TO_EDGE;
+                /* FIX (GL 3.3 sampler objects were ignored): glBindSampler binds a
+                 * sampler object to a texture unit, and its parameters (filter /
+                 * wrap / min LOD / LOD bias / compare mode) must override the
+                 * texture's embedded parameters. The previous code never looked at
+                 * g_state->samplerBindings[], so everything the host set through a
+                 * sampler object was silently dropped. */
+                GLint cmpEnable = 0;
+                GLint cmpOp = GL_ALWAYS;
+                GLfloat sMinLod = 0.0f;
+                GLfloat sLodBias = 0.0f;
+                {
+                    GLuint sname = 0;
+                    if (unit >= 0 && unit < mithril::kMaxTextureUnits)
+                        sname = mithril::g_state->samplerBindings[unit];
+                    if (sname) {
+                        mithril::Sampler* s = mithril::state_get_sampler(sname);
+                        if (s) {
+                            minF = (GLenum)s->minFilter;
+                            magF = (GLenum)s->magFilter;
+                            wrapS = (GLenum)s->wrapS;
+                            wrapT = (GLenum)s->wrapT;
+                            wrapR = (GLenum)s->wrapR;
+                            sMinLod  = s->minLod;
+                            sLodBias = s->lodBias;
+                            if (s->compareMode != 0) {  /* GL_NONE == 0 */
+                                cmpEnable = 1;
+                                cmpOp = s->compareFunc;
+                            }
+                        }
+                    }
+                }
                 samp = backend_get_or_create_sampler(
-                    tex_id, minF, magF, wrapS, wrapT, wrapR, nullptr);
+                    tex_id, minF, magF, wrapS, wrapT, wrapR, nullptr,
+                    cmpEnable, cmpOp, sMinLod, sLodBias);
             }
             // A storage image ignores the sampler, but the descriptor write
             // still needs a view. With no image bound, fall back to the same

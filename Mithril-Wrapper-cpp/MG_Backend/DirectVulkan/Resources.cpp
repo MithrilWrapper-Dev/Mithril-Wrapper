@@ -1839,9 +1839,26 @@ void backend_transition_texture_layout(GLuint name, VkImageLayout target_layout)
     mithril::vk::transition_image_layout(it->second, target_layout);
 }
 
+/* GL compare func -> VkCompareOp (local; avoids cross-TU linkage assumptions). */
+static VkCompareOp mithril_gl_compare_to_vk(GLenum f) {
+    switch (f) {
+        case GL_NEVER:    return VK_COMPARE_OP_NEVER;
+        case GL_LESS:     return VK_COMPARE_OP_LESS;
+        case GL_EQUAL:    return VK_COMPARE_OP_EQUAL;
+        case GL_LEQUAL:   return VK_COMPARE_OP_LESS_OR_EQUAL;
+        case GL_GREATER:  return VK_COMPARE_OP_GREATER;
+        case GL_NOTEQUAL: return VK_COMPARE_OP_NOT_EQUAL;
+        case GL_GEQUAL:   return VK_COMPARE_OP_GREATER_OR_EQUAL;
+        case GL_ALWAYS:   return VK_COMPARE_OP_ALWAYS;
+        default:          return VK_COMPARE_OP_ALWAYS;
+    }
+}
+
 VkSampler backend_get_or_create_sampler(GLuint name, GLint min_filter, GLint mag_filter,
                                         GLint wrap_s, GLint wrap_t, GLint wrap_r,
-                                        const float* border_color) {
+                                        const float* border_color,
+                                        GLint compare_enable, GLint compare_op,
+                                        GLfloat min_lod, GLfloat lod_bias) {
     mithril::vk::Backend* b = mithril::vk::backend();
     if (!b->initialized) return VK_NULL_HANDLE;
 
@@ -1889,6 +1906,13 @@ VkSampler backend_get_or_create_sampler(GLuint name, GLint min_filter, GLint mag
         if (tit != tex_tbl.end()) keyLevels = std::max(1, (int)tit->second.levels);
     }
     mix((uint64_t)(uint32_t)keyLevels);
+    /* GL 3.3 sampler-object state must participate in the cache key, otherwise
+     * a shadow (compare) sampler and a plain sampler on the same texture would
+     * collide and one of them would sample with the wrong compare op. */
+    mix((uint64_t)(uint32_t)compare_enable);
+    mix(compare_enable ? (uint64_t)(uint32_t)compare_op : 0ull);
+    mix((uint64_t)(uint32_t)(min_lod  * 1000.0f));
+    mix((uint64_t)(uint32_t)(lod_bias * 1000.0f));
 
     auto& tbl = mithril::vk::sampler_table();
     mithril::vk::SamplerEntry& entry = tbl[name];
@@ -1915,8 +1939,13 @@ VkSampler backend_get_or_create_sampler(GLuint name, GLint min_filter, GLint mag
     }
     sci.anisotropyEnable = VK_FALSE;
     sci.maxAnisotropy = 1.0f;
-    sci.compareEnable = VK_FALSE;
-    sci.compareOp = VK_COMPARE_OP_ALWAYS;
+    /* GL 3.3 core: sampler objects carry TEXTURE_COMPARE_MODE / TEXTURE_COMPARE_FUNC
+     * (shadow samplers) and TEXTURE_MIN_LOD / TEXTURE_LOD_BIAS. Previously these
+     * were hardcoded off, so every samplerCompare / LOD bias the host set was
+     * silently dropped. */
+    sci.compareEnable = compare_enable ? VK_TRUE : VK_FALSE;
+    sci.compareOp = compare_enable ? mithril_gl_compare_to_vk((GLenum)compare_op)
+                                   : VK_COMPARE_OP_ALWAYS;
     // FIX (纯红 + GPU page fault): 非 mipmap 的 min filter（GL_NEAREST / GL_LINEAR）
     // 只采样 base level。旧实现无条件 minLod=0 / maxLod=12 + mipmapMode=LINEAR，
     // 会让只有 1 层 mip 的纹理被请求跨 0..12 层采样 → A11/MoltenVK 采样读越界
@@ -1933,11 +1962,12 @@ VkSampler backend_get_or_create_sampler(GLuint name, GLint min_filter, GLint mag
         auto tit = tex_tbl.find(name);
         if (tit != tex_tbl.end()) actualLevels = tit->second.levels;
     }
+    sci.mipLodBias = lod_bias;
     if (!mipmapped) {
         sci.minLod = 0.0f;
         sci.maxLod = 0.0f;
     } else {
-        sci.minLod = 0.0f;
+        sci.minLod = min_lod;
         // FIX (加载界面即纯红 + GPU page fault 根因 - 单层 view + LINEAR mipmap):
         // 深度对照 MobileGL VkSamplerManager (ResolveSingleLevelMaxLod + BuildSamplerKey
         // 注释 :177-185)：当纹理当前只有 1 层 mip 时，若采样器仍用

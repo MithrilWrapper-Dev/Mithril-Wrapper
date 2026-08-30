@@ -87,14 +87,14 @@ static const char* kRenderer = "Mithril-Wrapper (Vulkan 1.2 / MoltenVK backend)"
 // crash-log triage. Concatenation relies on MITHRIL_COMMIT_ID being a string
 // literal macro.
 #define MITHRIL_VERSION_STR "OpenGL 4.6.0 §bMithril-Wrapper§r 1.0, Vulkan (MoltenVK) Backend, GIT@" MITHRIL_COMMIT_ID
-static const char* kVersion  = MITHRIL_VERSION_STR;
-static const char* kShadingLangVer = "4.60 Mithril-Wrapper (glslang -> SPIR-V)";
+static const char* kVersion  = nullptr; // set from mithril::version_string()
+static const char* kShadingLangVer = nullptr; // set from mithril::glsl_version_string()
 
 // Exposed so the EGL/init path can print the same version string on startup
 // (mirrors MobileGL's "Using graphics backend ... GIT@<hash>" log line) without
 // re-deriving it. Declared in egl.cpp.
 extern "C" const char* mithril_get_version_string(void) {
-    return kVersion;
+    return mithril::version_string().c_str();
 }
 
 // Full Core Profile 4.6 extension advertisement. LWJGL capability detection
@@ -105,7 +105,7 @@ extern "C" const char* mithril_get_version_string(void) {
 // paths). Geometry/tessellation-stage extensions are intentionally omitted
 // (Metal has no such stages via MoltenVK), and fp64 is reported through
 // ARB_gpu_shader_fp64 as present-but-software-gated where harmless.
-static const char* kExtensions[] = {
+[[maybe_unused]] static const char* kExtensions_unused[] = {
     /* ---- Core 3.x ---- */
     "GL_ARB_vertex_buffer_object",
     "GL_ARB_vertex_array_object",
@@ -224,8 +224,11 @@ GLenum glGetError(void) {
     MITHRIL_ENSURE_INIT();
     // Mirror MobileGlues: always return GL_NO_ERROR to prevent Minecraft from
     // spamming the log with GL errors that are harmless in the translation layer.
-    mithril::state_take_error();
-    return GL_NO_ERROR;
+    // Return the REAL deferred error instead of always GL_NO_ERROR.
+    // Silently swallowing errors is what let the red-screen failure modes stay
+    // invisible: Minecraft kept rendering with undefined textures and never
+    // logged a single GL error.
+    return mithril::state_take_error();
 }
 
 void glGetBooleanv(GLenum pname, GLboolean* params) {
@@ -312,10 +315,10 @@ void glGetIntegerv(GLenum pname, GLint* params) {
         case GL_DEPTH_BITS:                   *params = 24; break;
         case GL_STENCIL_BITS:                 *params = 8; break;
         case GL_NUM_EXTENSIONS:
-            *params = (GLint)(sizeof(kExtensions)/sizeof(kExtensions[0]));
+            *params = (GLint)(mithril::extensions().size());
             break;
-        case GL_MAJOR_VERSION:                *params = 4; break;
-        case GL_MINOR_VERSION:                *params = 6; break;
+        case GL_MAJOR_VERSION:                *params = mithril::caps().gl_major; break;
+        case GL_MINOR_VERSION:                *params = mithril::caps().gl_minor; break;
         case GL_CONTEXT_FLAGS:
             *params = GL_CONTEXT_FLAG_FORWARD_COMPATIBLE_BIT;
             break;
@@ -453,7 +456,7 @@ void glGetIntegerv(GLenum pname, GLint* params) {
         case GL_STENCIL_FAIL:                 *params = (GLint)g_state->stencilSfail; break;
         case GL_STENCIL_PASS_DEPTH_FAIL:     *params = (GLint)g_state->stencilDpfail; break;
         case GL_STENCIL_PASS_DEPTH_PASS:     *params = (GLint)g_state->stencilDppass; break;
-        case GL_SHADING_LANGUAGE_VERSION:     *params = 460; break;
+        case GL_SHADING_LANGUAGE_VERSION:     *params = mithril::caps().glsl_major * 100 + mithril::caps().glsl_minor; break;
         /* GL 4.5 ARB_clip_control: queryable clip volume state.
          * Required for completeness since we advertise GL_ARB_clip_control and
          * implement glClipControl. MC/Sodium may query these to decide whether
@@ -556,15 +559,15 @@ const GLubyte* glGetString(GLenum name) {
 #else
             return (const GLubyte*)kRenderer;
 #endif
-        case GL_VERSION:                  return (const GLubyte*)kVersion;
-        case GL_SHADING_LANGUAGE_VERSION: return (const GLubyte*)kShadingLangVer;
+        case GL_VERSION:                  return (const GLubyte*)mithril::version_string().c_str();
+        case GL_SHADING_LANGUAGE_VERSION: return (const GLubyte*)mithril::glsl_version_string().c_str();
         case GL_EXTENSIONS: {
             // Concatenate into a single space-separated string.
             static std::string all;
             if (all.empty()) {
-                for (size_t i = 0; i < sizeof(kExtensions)/sizeof(kExtensions[0]); ++i) {
+                for (size_t i = 0; i < mithril::extensions().size(); ++i) {
                     if (i) all += " ";
-                    all += kExtensions[i];
+                    all += mithril::extensions()[i];
                 }
             }
             return (const GLubyte*)all.c_str();
@@ -600,8 +603,8 @@ const GLubyte* glGetString(GLenum name) {
 const GLubyte* glGetStringi(GLenum name, GLuint index) {
     MITHRIL_ENSURE_INIT();
     if (name != GL_EXTENSIONS) return nullptr;
-    if (index >= sizeof(kExtensions)/sizeof(kExtensions[0])) return nullptr;
-    return (const GLubyte*)kExtensions[index];
+    if (index >= mithril::extensions().size()) return nullptr;
+    return (const GLubyte*)mithril::extensions()[index];
 }
 
 /* ---- Indexed state queries, remaining widths (root cause AR) ----

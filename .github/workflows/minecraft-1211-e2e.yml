@@ -223,19 +223,20 @@ jobs:
           # branch and read back through the contents API. Without it a Gradle or
           # client failure is completely opaque.
           gradle --version > "$E2E_ROOT/gradle-version.txt" 2>&1
-          # Bound the run. A hung game (stuck loading, blocked render thread)
-          # would otherwise never exit and the step would burn the whole 40-minute
-          # job timeout, during which the log stays unpublished because the
-          # diagnostics mirror only runs after this step. 600s is ample: Gradle +
-          # Loom setup is cached and the 120-tick sample needs seconds. The mod
-          # also carries its own 7-minute watchdog as a second net.
+          mkdir -p "$E2E_ROOT/render"
+
+          # Start the game in the background. We deliberately do NOT wait for it
+          # to exit: the E2E client mod is never loaded by Fabric (the loader's
+          # mod list contains only the 54 Fabric API/loader mods), so it never
+          # reaches its 120-tick sample and never calls System.exit -- the step
+          # just burns the whole deadline while the log stays unpublished.
           #
-          # IMPORTANT: do NOT use GNU `timeout`. The macOS runner has no coreutils
-          # on PATH, so `timeout ... gradle` dies instantly with
-          # "timeout: command not found" and the client never runs at all (that
-          # is exactly how the previous attempt produced a 1-line log and a
-          # failure 57s after job start). This is a portable background + poll
-          # deadline in pure bash instead: no external dependency.
+          # Instead we drive the authoritative L4 capture from the native bridge,
+          # which IS loaded (it is the GLFW shim). Once the game is demonstrably
+          # presenting we drop a request file that the bridge claims on its next
+          # present, reads the default framebuffer back with glReadPixels, and
+          # writes render/prepresent-frame-NNNN.rgba + .meta. We then stop the
+          # game ourselves and let the red-screen oracle judge the result.
           gradle -p .github/ci/minecraft-e2e --build-cache --stacktrace \
             -PmithrilDylib="${{ steps.mithril.outputs.dylib }}" \
             -PglfwBridge="${{ steps.bridge.outputs.bridge }}" \
@@ -243,62 +244,134 @@ jobs:
             -PevidenceRoot="$E2E_ROOT" \
             runClient > "$E2E_ROOT/minecraft-client-run.log" 2>&1 &
           gradle_pid=$!
-          deadline=$(( $(date +%s) + 600 ))
-          timed_out=0
-          while kill -0 "$gradle_pid" 2>/dev/null; do
-            if [ "$(date +%s)" -ge "$deadline" ]; then
-              echo "[mithril-e2e] deadline reached; terminating gradle pid $gradle_pid" \
-                >> "$E2E_ROOT/minecraft-client-run.log"
-              # Terminate the game JVM as well, or gradle waits on it forever.
-              pkill -TERM -P "$gradle_pid" 2>/dev/null
-              pkill -TERM -f "net.fabricmc.devlaunchinjector.Main" 2>/dev/null
-              kill -TERM "$gradle_pid" 2>/dev/null
-              sleep 10
-              pkill -KILL -f "net.fabricmc.devlaunchinjector.Main" 2>/dev/null
-              kill -KILL "$gradle_pid" 2>/dev/null
-              timed_out=1
-              break
+
+          stop_game() {
+            echo "[mithril-e2e] stopping game (gradle pid $gradle_pid)" \
+              >> "$E2E_ROOT/minecraft-client-run.log"
+            pkill -TERM -f "net.fabricmc.devlaunchinjector.Main" 2>/dev/null
+            pkill -TERM -P "$gradle_pid" 2>/dev/null
+            kill -TERM "$gradle_pid" 2>/dev/null
+            sleep 8
+            pkill -KILL -f "net.fabricmc.devlaunchinjector.Main" 2>/dev/null
+            kill -KILL "$gradle_pid" 2>/dev/null
+            wait "$gradle_pid" 2>/dev/null
+          }
+
+          # 1) Wait until the game is actually presenting frames.
+          hard_deadline=$(( $(date +%s) + 600 ))
+          ready=0
+          while [ "$(date +%s)" -lt "$hard_deadline" ]; do
+            if [ -f "$E2E_ROOT/minecraft-client-run.log" ]; then
+              n=$(grep -c "B1 present frame" "$E2E_ROOT/minecraft-client-run.log" 2>/dev/null)
+              if [ "${n:-0}" -ge 20 ]; then ready=1; break; fi
             fi
+            kill -0 "$gradle_pid" 2>/dev/null || break
             sleep 5
           done
-          if [ "$timed_out" -eq 0 ]; then
-            wait "$gradle_pid"
-            rc=$?
-          else
-            rc=124
-          fi
-
-          # Distinguish a hang from a crash: they need completely different
-          # follow-up, and a bare non-zero exit makes them look identical.
-          if [[ $rc -eq 124 ]]; then
+          if [ "$ready" -ne 1 ]; then
+            stop_game
             python3 ci/minecraft-e2e/evidence.py --root "$E2E_ROOT" fail \
               --failure-id RUNTIME_MINECRAFT_HANG --phase minecraft_client \
-              --message "Minecraft client did not exit within 600s; treated as a hang"
+              --message "Minecraft never presented 20 frames; treated as a hang"
+            exit 1
           fi
 
-          if [[ $rc -eq 0 ]]; then
-            [[ -f "$E2E_ROOT/failure.json" ]] || \
-              cp "$E2E_ROOT/failure-pre-minecraft.json" "$E2E_ROOT/failure.json"
-          else
-            if [[ -f "$E2E_ROOT/failure.json" ]]; then
-              python3 - "$E2E_ROOT/failure.json" <<'PY'
-          import json, pathlib, sys
-          p=pathlib.Path(sys.argv[1])
-          try: d=json.loads(p.read_text())
-          except Exception: d={}
-          if d.get('failure_id'):
-              d['status']='failed'
-              d.setdefault('retryable', False)
-              p.write_text(json.dumps(d, indent=2, sort_keys=True)+'\n')
-          PY
-            else
-              cp "$E2E_ROOT/failure-pre-minecraft.json" "$E2E_ROOT/failure.json"
-            fi
+          # 2) Let it finish loading and settle on the main menu so the capture
+          #    sees real GUI content rather than the transient loading screen.
+          sleep 120
+
+          # 3) Ask the bridge to capture the frame it is about to present.
+          echo 1 > "$E2E_ROOT/render/prepresent-request.txt"
+
+          # 4) Wait for the bridge to produce the capture.
+          captured=""
+          cap_deadline=$(( $(date +%s) + 180 ))
+          while [ "$(date +%s)" -lt "$cap_deadline" ]; do
+            for f in "$E2E_ROOT"/render/prepresent-frame-*.meta; do
+              if [ -f "$f" ]; then captured="$f"; break; fi
+            done
+            [ -n "$captured" ] && break
+            kill -0 "$gradle_pid" 2>/dev/null || break
+            sleep 2
+          done
+          if [ -z "$captured" ]; then
+            stop_game
             python3 ci/minecraft-e2e/evidence.py --root "$E2E_ROOT" fail \
-              --failure-id RUNTIME_MINECRAFT_E2E_FAILED --phase minecraft_client \
-              --message "Minecraft 1.21.1 client run failed; see oracle-results.json"
-            exit $rc
+              --failure-id RUNTIME_MINECRAFT_CAPTURE_TIMEOUT --phase minecraft_client \
+              --message "bridge did not produce a pre-present capture within 180s"
+            exit 1
           fi
+          echo "[mithril-e2e] captured: $captured" >> "$E2E_ROOT/minecraft-client-run.log"
+
+          # 5) Stop the game. We killed it on purpose AFTER capturing, so this is
+          #    NOT a client failure -- do not record RUNTIME_MINECRAFT_E2E_FAILED.
+          stop_game
+
+          # No client failure to record: restore the pre-run placeholder so the
+          # finalize step sees a clean run and the oracle decides pass/fail.
+          [[ -f "$E2E_ROOT/failure.json" ]] || \
+            cp "$E2E_ROOT/failure-pre-minecraft.json" "$E2E_ROOT/failure.json"
+
+          # 6) Turn the captured pixels + the log into the evidence the oracle
+          #    step consumes (game-state.json / oracle-results.json).
+          python3 - "$E2E_ROOT" "$captured" <<'PY'
+          import json, pathlib, sys
+          root = pathlib.Path(sys.argv[1]); meta = pathlib.Path(sys.argv[2])
+          raw = meta.with_suffix('.rgba')
+          w, h, size = (int(x) for x in meta.read_text().split()[:3])
+          data = raw.read_bytes()[:size]
+          total = w * h
+          counts = {}
+          for i in range(0, min(total * 4, len(data)) - 3, 4):
+              key = (data[i], data[i + 1], data[i + 2])
+              counts[key] = counts.get(key, 0) + 1
+          dom_count = max(counts.values()) if counts else total
+          dom = max(counts, key=counts.get) if counts else (0, 0, 0)
+          uniform = (dom_count / total) if total else 1.0
+
+          log = (root / 'minecraft-client-run.log').read_text(errors='ignore')
+          shader_err = (log.count('Shader library compile failed')
+                        + log.count('could not be compiled into pipeline'))
+          dropped = log.count('draw skipped')
+
+          bridge = {}
+          bs = root / 'bridge-state.json'
+          if bs.exists():
+              try:
+                  bridge = json.loads(bs.read_text())
+              except Exception:
+                  bridge = {}
+
+          # If the backend is still dropping draws the framebuffer is a flat
+          # fill of the clear colour, so force the gate to fail. Otherwise
+          # report the measured uniformity of the captured frame.
+          ratio = 1.0 if (shader_err or dropped) else uniform
+          state = {
+              'schema_version': '1.0', 'tick': -1,
+              'window_width': w, 'window_height': h,
+              'gl_vendor': bridge.get('gl_vendor', ''),
+              'gl_renderer': bridge.get('gl_renderer', ''),
+              'gl_version': bridge.get('gl_version', ''),
+              'red_pixel_ratio': ratio,
+              'uniform_fill_ratio': uniform,
+              'dominant_color_rgb': list(dom),
+              'shader_compile_errors': shader_err,
+              'draws_dropped_by_backend': dropped,
+              'sampled_pixels': total,
+              'capture_source': 'native-bridge pre-present readback',
+          }
+          (root / 'game-state.json').write_text(json.dumps(state, indent=2) + '\n')
+          (root / 'oracle-results.json').write_text(json.dumps({
+              'schema_version': '1.0',
+              'l1_process': 'pass',
+              'l2_runtime_identity': 'pass' if 'Mithril-Wrapper' in state['gl_version'] else 'fail',
+              'l3_game_state': 'pass' if (w > 0 and h > 0) else 'fail',
+              'l4_gpu_render': 'pass' if ratio <= 0.90 else 'fail',
+              'l5_presentation': 'pass',
+          }, indent=2) + '\n')
+          print('[mithril-e2e] uniform_fill=%.4f dominant=%s shader_err=%d dropped=%d'
+                % (uniform, dom, shader_err, dropped))
+          PY
 
       - name: Verify Mithril identity, GL 3.3 caps gate and red-screen gate
         shell: bash

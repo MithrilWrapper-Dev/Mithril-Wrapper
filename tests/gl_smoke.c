@@ -1,5 +1,5 @@
 /*
- * gl_smoke.c — Mithril-Wrapper GL 4.6 Core Profile 契约 + 状态机冒烟测试。
+ * gl_smoke.c — Mithril-Wrapper GL Core Profile 契约 + 状态机冒烟测试。
  *
  * 参照 Uniaball/Mithril-Wrapper 的 tests/state_smoke.c 结构：dlopen 构建产物，
  * dlsym 解析导出的 GL 入口，随后对「纯状态机」行为做断言。这类断言不依赖
@@ -130,7 +130,7 @@ int main(int argc, char** argv) {
     glDrawElements_fn drawElements = (glDrawElements_fn)dlsym(h, "glDrawElements");
     glTexParameteri_fn texParamI  = (glTexParameteri_fn)dlsym(h, "glTexParameteri");
 
-    /* ---- GL 4.6 核心符号契约（抽样，覆盖状态机 + 纹理 + 绘制 + mipmap） --- */
+    /* ---- GL Core Profile 核心符号契约（抽样，覆盖状态机 + 纹理 + 绘制 + mipmap） --- */
     CHECK(getIntegerv && getFloatv && getBooleanv && getString && getStringi &&
           getError && viewport && scissor && enable && disable && isEnabled &&
           enablei && disablei && isEnabledi,
@@ -142,34 +142,54 @@ int main(int argc, char** argv) {
           "texture symbols resolved (incl. glGenerateMipmap)");
     CHECK(drawArrays && drawElements, "draw entry points resolved");
 
-    /* ---- 版本 / 能力查询 ------------------------------------------------ */
+    /* ---- 版本 / 能力查询 ------------------------------------------------
+     * 契约：对外宣称的 GL 等级必须是「我们真正实现的等级」之一，且
+     * GL_MAJOR|MINOR_VERSION / GL_VERSION / GL_SHADING_LANGUAGE_VERSION
+     * 三者必须自洽。
+     *
+     * 此前这里硬编码断言 4.6 —— 但实现里大量 4.x 入口是空 stub，Minecraft
+     * 被"骗"进 4.6 代码路径后引用不存在的资源、采样未定义描述符，渲染成
+     * 纯红屏。现在等级由 MG_State/Caps 单点决定（当前 3.3 / GLSL 330，
+     * 4.6 全部补齐后再上调），所以这里改为断言「自洽 + 属于已实现等级集合」：
+     * 未来把 caps 升到 4.6 时本测试无需改动即可继续保持有效。 */
     GLint major = 0, minor = 0;
     getIntegerv(GL_MAJOR_VERSION, &major);
     getIntegerv(GL_MINOR_VERSION, &minor);
-    CHECK(major == 4 && minor == 6,
-          "GL_MAJOR_VERSION=%d GL_MINOR_VERSION=%d == 4.6", major, minor);
+    CHECK((major == 3 && minor == 3) || (major == 4 && minor == 6),
+          "advertised GL level is one we implement (got %d.%d)", major, minor);
 
+    char wantVer[32];
+    snprintf(wantVer, sizeof wantVer, "%d.%d.0", major, minor);
     const char* version = (const char*)getString(GL_VERSION);
-    CHECK(version && strstr(version, "4.6"),
-          "glGetString(GL_VERSION) contains 4.6 (got \"%s\")", version ? version : "(null)");
+    CHECK(version && strncmp(version, wantVer, strlen(wantVer)) == 0,
+          "GL_VERSION starts with advertised %s (got \"%s\")",
+          wantVer, version ? version : "(null)");
 
+    /* GLSL 版本随 GL 等级联动：3.3 -> "3.30"，4.6 -> "4.60"
+     * （注意 GLSL 版本号带小数点，形如 major.minor，不是 330 / 460 整数）。 */
+    char wantGlsl[32];
+    snprintf(wantGlsl, sizeof wantGlsl, "%d.%d", major, minor * 10);
     const char* glslVer = (const char*)getString(GL_SHADING_LANGUAGE_VERSION);
-    CHECK(glslVer && strstr(glslVer, "4.60"),
-          "glGetString(GL_SHADING_LANGUAGE_VERSION) contains 4.60 (got \"%s\")",
-          glslVer ? glslVer : "(null)");
+    CHECK(glslVer && strncmp(glslVer, wantGlsl, strlen(wantGlsl)) == 0,
+          "GL_SHADING_LANGUAGE_VERSION starts with %s (got \"%s\")",
+          wantGlsl, glslVer ? glslVer : "(null)");
 
     /* ---- 错误语义 ------------------------------------------------------------
-     * Mithril 镜像 MobileGlues 的故意设计：glGetError 恒返回 GL_NO_ERROR，仅
-     * 内部弹出错误队列（否则 Minecraft 会刷屏无害的 GL 错误日志）。因此断言
-     * 非法 pname / capability 的调用本身不崩溃、状态机保持可用即可 —— 不能
-     * 期望 glGetError 返回 GL_INVALID_ENUM（该实现契约永远返回 NO_ERROR）。 */
-    CHECK(getError() == GL_NO_ERROR, "glGetError always NO_ERROR (MobileGlues mirror)");
+     * 修复后契约：glGetError 返回真实的延迟错误。
+     *
+     * 此前它恒返回 GL_NO_ERROR（把错误队列弹出后丢弃），这正是上面那类
+     * 红屏故障能被完全吞掉的原因：Minecraft 静默采样未定义资源、屏幕纯红，
+     * 而 CI 与日志全绿、不报任何 GL 错误。现在的正确语义是：
+     * 合法调用不产生错误，非法 pname / capability 必须如实上报
+     * GL_INVALID_ENUM（GL 规范要求）。 */
+    CHECK(getError() == GL_NO_ERROR, "capability queries leave no error");
     GLint bogus = 0;
     getIntegerv(0xC0FFEE, &bogus);                       /* 非法 pname 不崩溃 */
-    CHECK(getError() == GL_NO_ERROR, "illegal getIntegerv pname tolerated (no crash)");
+    CHECK(getError() == GL_INVALID_ENUM, "illegal getIntegerv pname reports GL_INVALID_ENUM");
     enable(0xC0FFEE);                                     /* 非法 capability 不崩溃 */
+    CHECK(getError() == GL_INVALID_ENUM, "illegal enable cap reports GL_INVALID_ENUM");
     disable(0xC0FFEE);
-    CHECK(getError() == GL_NO_ERROR, "illegal enable/disable cap tolerated (no crash)");
+    CHECK(getError() == GL_INVALID_ENUM, "illegal disable cap reports GL_INVALID_ENUM");
 
     /* ---- viewport / scissor round-trip ----------------------------------- */
     viewport(10, 20, 640, 480);

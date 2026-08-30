@@ -223,13 +223,27 @@ jobs:
           # branch and read back through the contents API. Without it a Gradle or
           # client failure is completely opaque.
           gradle --version > "$E2E_ROOT/gradle-version.txt" 2>&1
-          gradle -p .github/ci/minecraft-e2e --build-cache --stacktrace \
+          # Bound the run. A hung game (stuck loading, blocked render thread)
+          # would otherwise never exit and the step would burn the whole 40-minute
+          # job timeout, during which the log stays unpublished because the
+          # diagnostics mirror only runs after this step. 600s is ample: Gradle +
+          # Loom setup is cached and the 120-tick sample needs seconds. The mod
+          # also carries its own 7-minute watchdog as a second net.
+          timeout 600 gradle -p .github/ci/minecraft-e2e --build-cache --stacktrace \
             -PmithrilDylib="${{ steps.mithril.outputs.dylib }}" \
             -PglfwBridge="${{ steps.bridge.outputs.bridge }}" \
             -PglfwDelegate="${{ steps.bridge.outputs.glfw_real }}" \
             -PevidenceRoot="$E2E_ROOT" \
             runClient 2>&1 | tee "$E2E_ROOT/minecraft-client-run.log"
           rc=${PIPESTATUS[0]}
+
+          # Distinguish a hang from a crash: they need completely different
+          # follow-up, and a bare non-zero exit makes them look identical.
+          if [[ $rc -eq 124 ]]; then
+            python3 ci/minecraft-e2e/evidence.py --root "$E2E_ROOT" fail \
+              --failure-id RUNTIME_MINECRAFT_HANG --phase minecraft_client \
+              --message "Minecraft client did not exit within 600s; treated as a hang"
+          fi
 
           if [[ $rc -eq 0 ]]; then
             [[ -f "$E2E_ROOT/failure.json" ]] || \

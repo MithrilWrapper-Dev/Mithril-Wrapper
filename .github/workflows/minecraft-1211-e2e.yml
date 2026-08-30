@@ -217,13 +217,18 @@ jobs:
           cp "$E2E_ROOT/failure.json" "$E2E_ROOT/failure-pre-minecraft.json"
           rm -f "$E2E_ROOT/failure.json"
 
+          # Capture the full Gradle + Minecraft output. Job logs are not readable
+          # from outside GitHub, so this file is published to the ci-diagnostics
+          # branch and read back through the contents API. Without it a Gradle or
+          # client failure is completely opaque.
+          gradle --version > "$E2E_ROOT/gradle-version.txt" 2>&1
           gradle -p .github/ci/minecraft-e2e --build-cache --stacktrace \
             -PmithrilDylib="${{ steps.mithril.outputs.dylib }}" \
             -PglfwBridge="${{ steps.bridge.outputs.bridge }}" \
             -PglfwDelegate="${{ steps.bridge.outputs.glfw_real }}" \
             -PevidenceRoot="$E2E_ROOT" \
-            runProductionClientGameTest
-          rc=$?
+            runProductionClientGameTest 2>&1 | tee "$E2E_ROOT/minecraft-client-run.log"
+          rc=${PIPESTATUS[0]}
 
           if [[ $rc -eq 0 ]]; then
             [[ -f "$E2E_ROOT/failure.json" ]] || \

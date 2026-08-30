@@ -77,32 +77,41 @@ public final class MithrilE2EClient implements ClientModInitializer {
                 }
                 double redRatio = (double) red / (double) total;
 
-                writeJson(root.resolve("game-state.json"), new LinkedHashMap<String, Object>() {{
-                    put("schema_version", "1.0");
-                    put("tick", ticks);
-                    put("window_width", w);
-                    put("window_height", h);
-                    put("gl_vendor", vendor);
-                    put("gl_renderer", renderer);
-                    put("gl_version", version);
-                    put("red_pixel_ratio", redRatio);
-                    put("sampled_pixels", total);
-                    put("red_pixels", red);
-                }});
+                // NOTE: build these records with plain put() calls, NOT the
+                // double-brace map idiom. That idiom creates an anonymous inner
+                // class, which may only capture locals that are final or
+                // effectively final -- and `red` is the counter incremented once
+                // per sampled pixel, so it cannot be captured. The result was a
+                // compile-time failure ("local variables referenced from an inner
+                // class must be final or effectively final") that aborted
+                // :compileJava before Minecraft ever launched. MobileGL's own
+                // readback smoke tests build their records the plain-map way.
+                Map<String, Object> gameState = new LinkedHashMap<>();
+                gameState.put("schema_version", "1.0");
+                gameState.put("tick", ticks);
+                gameState.put("window_width", w);
+                gameState.put("window_height", h);
+                gameState.put("gl_vendor", vendor);
+                gameState.put("gl_renderer", renderer);
+                gameState.put("gl_version", version);
+                gameState.put("red_pixel_ratio", redRatio);
+                gameState.put("sampled_pixels", total);
+                gameState.put("red_pixels", red);
+                writeJson(root.resolve("game-state.json"), gameState);
 
                 boolean identityOk = version.contains("Mithril-Wrapper")
                         && renderer.contains("Mithril-Wrapper");
                 boolean gameOk = w > 0 && h > 0;
                 boolean renderOk = redRatio <= RED_FAIL_RATIO;
 
-                writeJson(root.resolve("oracle-results.json"), new LinkedHashMap<String, Object>() {{
-                    put("schema_version", "1.0");
-                    put("l1_process", "pass");
-                    put("l2_runtime_identity", identityOk ? "pass" : "fail");
-                    put("l3_game_state", gameOk ? "pass" : "fail");
-                    put("l4_gpu_render", renderOk ? "pass" : "fail");
-                    put("l5_presentation", "diagnostic");
-                }});
+                Map<String, Object> oracles = new LinkedHashMap<>();
+                oracles.put("schema_version", "1.0");
+                oracles.put("l1_process", "pass");
+                oracles.put("l2_runtime_identity", identityOk ? "pass" : "fail");
+                oracles.put("l3_game_state", gameOk ? "pass" : "fail");
+                oracles.put("l4_gpu_render", renderOk ? "pass" : "fail");
+                oracles.put("l5_presentation", "diagnostic");
+                writeJson(root.resolve("oracle-results.json"), oracles);
 
                 System.out.println("[mithril-e2e] GL_VENDOR=" + vendor);
                 System.out.println("[mithril-e2e] GL_RENDERER=" + renderer);
@@ -112,11 +121,10 @@ public final class MithrilE2EClient implements ClientModInitializer {
                 if (!renderOk) {
                     System.err.println("[mithril-e2e] FAILURE: pure-red screen detected "
                             + "(red_pixel_ratio=" + redRatio + ")");
-                    writeJson(root.resolve("red-screen-detected.json"),
-                            new LinkedHashMap<String, Object>() {{
-                                put("schema_version", "1.0");
-                                put("red_pixel_ratio", redRatio);
-                            }});
+                    Map<String, Object> redEvidence = new LinkedHashMap<>();
+                    redEvidence.put("schema_version", "1.0");
+                    redEvidence.put("red_pixel_ratio", redRatio);
+                    writeJson(root.resolve("red-screen-detected.json"), redEvidence);
                     System.exit(3);
                 }
                 System.exit(0);

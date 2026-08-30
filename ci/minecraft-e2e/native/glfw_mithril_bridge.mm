@@ -7,6 +7,7 @@
 
 #import <AppKit/AppKit.h>
 #import <QuartzCore/QuartzCore.h>
+#import <QuartzCore/CAMetalLayer.h>
 
 #include <dlfcn.h>
 #include <atomic>
@@ -273,15 +274,44 @@ GLFWwindow* glfwCreateWindow(int width, int height, const char* title,
 
     NSWindow* cocoa = (NSWindow*)getCocoa(window);
     NSView* view = cocoa.contentView;
-    view.wantsLayer = YES;
-    [view layoutSubtreeIfNeeded];
-    if (!view.layer) {
+    if (!view) {
         auto destroy = real_glfw<void (*)(GLFWwindow*)>("glfwDestroyWindow");
         if (destroy) destroy(window);
-        emit_event("bridge_error", "Cocoa content view has no backing CALayer");
+        emit_event("bridge_error", "Cocoa window has no content view");
         return nullptr;
     }
-    view.layer.contentsScale = cocoa.backingScaleFactor > 0.0 ? cocoa.backingScaleFactor : 1.0;
+
+    // The bridge must hand Mithril a REAL CAMetalLayer.
+    //
+    // Why: Mithril's egl/SurfaceMetal.mm surface_create() requires the native
+    // window to BE a CAMetalLayer. It only builds one itself when the layer it
+    // is given has a superlayer to swap the replacement into. `wantsLayer = YES`
+    // makes AppKit create a plain backing CALayer that is the ROOT of the
+    // window's layer tree, so [layer superlayer] is nil; surface_create() then
+    // refuses ("no superlayer to swap into; refusing unsafe coercion") and
+    // returns nullptr. That made eglCreateWindowSurface fail, glfwCreateWindow
+    // return NULL, and Minecraft die with a NullPointerException in
+    // Window.<init> -> glfwSetWindowSizeLimits (LWJGL Checks.check on a null
+    // window handle, not a missing function pointer).
+    //
+    // Mithril is right to refuse: it used to object_setClass() a plain CALayer
+    // into a CAMetalLayer, which reads CAMetalLayer-only ivars past the
+    // allocation and corrupts memory. So the host -- the bridge standing in for
+    // a real launcher such as Amethyst/Pojav -- must supply the CAMetalLayer.
+    CAMetalLayer* metalLayer = [CAMetalLayer layer];
+    if (!metalLayer) {
+        auto destroy = real_glfw<void (*)(GLFWwindow*)>("glfwDestroyWindow");
+        if (destroy) destroy(window);
+        emit_event("bridge_error", "could not allocate CAMetalLayer");
+        return nullptr;
+    }
+    metalLayer.contentsScale = cocoa.backingScaleFactor > 0.0 ? cocoa.backingScaleFactor : 1.0;
+    metalLayer.opaque = YES;
+    // Assigning `layer` replaces AppKit's default backing layer and implies
+    // wantsLayer = YES, so the content view now hosts a genuine Metal layer.
+    view.layer = metalLayer;
+    view.wantsLayer = YES;
+    [view layoutSubtreeIfNeeded];
 
     auto& m = mithril();
     EGLDisplay display = m.getDisplay(EGL_DEFAULT_DISPLAY);
@@ -306,7 +336,7 @@ GLFWwindow* glfwCreateWindow(int width, int height, const char* title,
         return nullptr;
     }
     EGLSurface surface = m.createWindowSurface(display, config,
-                                                (__bridge void*)view.layer, nullptr);
+                                                (__bridge void*)metalLayer, nullptr);
     if (surface == EGL_NO_SURFACE) {
         emit_event("bridge_error", "Mithril EGL window surface creation failed");
         return nullptr;

@@ -196,6 +196,7 @@ jobs:
             ci/minecraft-e2e/native/prepresent_capture.mm \
             -I"$GLFW_PREFIX/include" -IMithril-Wrapper-cpp/include \
             -framework AppKit -framework QuartzCore -framework Foundation \
+            -framework Metal \
             -Wl,-reexport_library,"$GLFW_REAL" \
             -o "$BRIDGE" 2>&1 | tee "$E2E_ROOT/glfw-bridge-build.log"
           rc=${PIPESTATUS[0]}

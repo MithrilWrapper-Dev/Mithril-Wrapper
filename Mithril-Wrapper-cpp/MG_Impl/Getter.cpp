@@ -21,6 +21,7 @@
 //   MITHRIL_BACKEND_GETTER (0x0401) — added to a standard GL enum to bypass
 //     the OpenGL facade and query the real Vulkan backend string.
 #include "includes.h"
+#include "../MG_State/Caps.h"
 
 #include <cstdio>
 #include <sstream>

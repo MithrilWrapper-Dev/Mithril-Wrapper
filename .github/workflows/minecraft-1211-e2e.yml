@@ -151,7 +151,7 @@ jobs:
             --event native_gpu_control_passed --phase native_control \
             --message "real GPU draw/readback control passed"
 
-      - name: Prove cubemap and array slice semantics
+      - name: Prove cubemap and array layer semantics
         shell: bash
         env:
           MITHRIL_DYLIB: ${{ steps.mithril.outputs.dylib }}
@@ -160,7 +160,7 @@ jobs:
           export DYLD_LIBRARY_PATH="$(brew --prefix)/lib"
           clang -std=c11 -O0 -Wall -Wextra -IMithril-Wrapper-cpp/include \
             -o build-minecraft-e2e-native/layered_texture_smoke \
-            tests/directmetal_layered_texture_smoke.c -ldl
+            tests/layered_texture_smoke.c -ldl
           rc=$?
           if [[ $rc -eq 0 ]]; then
             build-minecraft-e2e-native/layered_texture_smoke "$MITHRIL_DYLIB" \
@@ -170,12 +170,12 @@ jobs:
           if [[ $rc -ne 0 ]]; then
             python3 ci/minecraft-e2e/evidence.py --root "$E2E_ROOT" fail \
               --failure-id RENDER_LAYERED_TEXTURE_CONTROL_FAILED --phase native_control \
-              --message "cubemap/array slice regression control failed"
+              --message "cubemap face / array layer regression control failed"
             exit $rc
           fi
           python3 ci/minecraft-e2e/evidence.py --root "$E2E_ROOT" event \
             --event layered_texture_control_passed --phase native_control \
-            --message "cubemap faces and array layers map to image slices"
+            --message "cubemap faces and array layers map to image layers"
 
       - name: Build GLFW to Mithril EGL/CAMetalLayer bridge with pre-present oracle
         id: bridge

@@ -712,7 +712,13 @@ void stage_and_copy_image(TextureEntry& tex, int level, int x, int y, int z,
     // -> sampling an undefined cubemap layer -> MoltenVK/A11 GPU Address Fault.
     // Fix: for cubemaps use baseArrayLayer = z (face), zero the image z-offset;
     // for 3D textures keep z as imageOffset.z and baseArrayLayer = 0.
-    if (tex.target == GL_TEXTURE_CUBE_MAP && z >= 0 && z < 6) {
+    if (tex.target == GL_TEXTURE_2D_ARRAY) {
+        // For a 2D array the z parameter is the FIRST LAYER, not a 3D depth
+        // offset: layers live in baseArrayLayer/layerCount with extent depth 1.
+        region.imageSubresource.baseArrayLayer = (uint32_t)(z > 0 ? z : 0);
+        region.imageSubresource.layerCount = (uint32_t)(d > 0 ? d : 1);
+        region.imageOffset = { x, y, 0 };
+    } else if (tex.target == GL_TEXTURE_CUBE_MAP && z >= 0 && z < 6) {
         region.imageSubresource.baseArrayLayer = (uint32_t)z;
         region.imageSubresource.layerCount = 1;
         region.imageOffset = { x, y, 0 };
@@ -721,7 +727,8 @@ void stage_and_copy_image(TextureEntry& tex, int level, int x, int y, int z,
         region.imageSubresource.layerCount = 1;
         region.imageOffset = { x, y, z };
     }
-    region.imageExtent = { (uint32_t)w, (uint32_t)h, (uint32_t)d };
+    region.imageExtent = { (uint32_t)w, (uint32_t)h,
+                           (uint32_t)(tex.target == GL_TEXTURE_3D ? d : 1) };
 
     // Transition the image layout to TRANSFER_DST for the copy.
     // 根因 F：部分上传（glTexSubImage*）必须用 tex.currentLayout 作为 oldLayout，
@@ -937,7 +944,10 @@ void transition_image_layout(TextureEntry& tex, VkImageLayout newLayout) {
     // stale layout and were later sampled without a proper barrier -> MoltenVK/
     // A11 GPU address fault. Cover the full layer count for cubemaps (2D and
     // 3D images keep layerCount=1, so the blast radius is unchanged there).
-    barrier.subresourceRange.layerCount = (tex.target == GL_TEXTURE_CUBE_MAP) ? 6u : 1u;
+    barrier.subresourceRange.layerCount =
+        (tex.target == GL_TEXTURE_CUBE_MAP) ? 6u
+      : (tex.target == GL_TEXTURE_2D_ARRAY) ? (uint32_t)(tex.depth > 0 ? tex.depth : 1)
+      : 1u;
 
     vkCmdPipelineBarrier(b->commandBuffer,
                          src_stage_for_layout(tex.currentLayout),
@@ -1471,7 +1481,16 @@ VkImage backend_get_or_create_texture(GLuint name, int width, int height, int de
     ici.format = fmt;
     ici.extent = { (uint32_t)width, (uint32_t)height, (uint32_t)(imgType == VK_IMAGE_TYPE_3D ? depth : 1) };
     ici.mipLevels = e.levels;
-    ici.arrayLayers = (imgType == VK_IMAGE_TYPE_3D) ? 1 : (target == GL_TEXTURE_CUBE_MAP ? 6 : 1);
+    // FIX (GL 3.0 GL_TEXTURE_2D_ARRAY collapsed to one layer): every layered
+    // decision here keyed off `target == GL_TEXTURE_CUBE_MAP`, so a 2D array
+    // texture got arrayLayers=1 while GL's `depth` parameter is really the
+    // LAYER COUNT. Layers 1..n were then never allocated, uploaded or
+    // transitioned, and the copy extent exceeded the image depth (validation
+    // error). Minecraft/Sodium use texture arrays, so most of every array was
+    // silently dropped.
+    ici.arrayLayers = (imgType == VK_IMAGE_TYPE_3D) ? 1
+                    : (target == GL_TEXTURE_CUBE_MAP ? 6
+                    : (target == GL_TEXTURE_2D_ARRAY ? (uint32_t)(depth > 0 ? depth : 1) : 1));
     ici.samples = (VkSampleCountFlagBits)(samples > 1 ? samples : 1);
     ici.tiling = VK_IMAGE_TILING_OPTIMAL;
     // FIX (Root Cause I - 颜色纹理缺 COLOR_ATTACHMENT_BIT):
@@ -1608,7 +1627,9 @@ VkImage backend_get_or_create_texture(GLuint name, int width, int height, int de
     vci.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
     vci.image = e.image;
     vci.viewType = (target == GL_TEXTURE_3D) ? VK_IMAGE_VIEW_TYPE_3D :
-                   (target == GL_TEXTURE_CUBE_MAP ? VK_IMAGE_VIEW_TYPE_CUBE : VK_IMAGE_VIEW_TYPE_2D);
+                   (target == GL_TEXTURE_CUBE_MAP ? VK_IMAGE_VIEW_TYPE_CUBE :
+                    (target == GL_TEXTURE_2D_ARRAY ? VK_IMAGE_VIEW_TYPE_2D_ARRAY
+                                                   : VK_IMAGE_VIEW_TYPE_2D));
     vci.format = fmt;
     vci.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     if (fmt == VK_FORMAT_D16_UNORM || fmt == VK_FORMAT_D32_SFLOAT)
@@ -1763,7 +1784,12 @@ void backend_texture_upload_compressed(GLuint name, int level, int x, int y, int
     // FIX (cubemap face upload, same as stage_and_copy_image): face index is
     // carried in the z parameter; for a cubemap map it to baseArrayLayer
     // (array layer == face) instead of treating z as a 3D image offset.
-    if (tex.target == GL_TEXTURE_CUBE_MAP && z >= 0 && z < 6) {
+    if (tex.target == GL_TEXTURE_2D_ARRAY) {
+        // See the sibling fix above: z is the first array layer, not depth.
+        region.imageSubresource.baseArrayLayer = (uint32_t)(z > 0 ? z : 0);
+        region.imageSubresource.layerCount = (uint32_t)(d > 0 ? d : 1);
+        region.imageOffset = {x, y, 0};
+    } else if (tex.target == GL_TEXTURE_CUBE_MAP && z >= 0 && z < 6) {
         region.imageSubresource.baseArrayLayer = (uint32_t)z;
         region.imageSubresource.layerCount = 1;
         region.imageOffset = {x, y, 0};
@@ -1772,7 +1798,8 @@ void backend_texture_upload_compressed(GLuint name, int level, int x, int y, int
         region.imageSubresource.layerCount = 1;
         region.imageOffset = {x, y, z};
     }
-    region.imageExtent = {(uint32_t)w, (uint32_t)h, (uint32_t)d};
+    region.imageExtent = {(uint32_t)w, (uint32_t)h,
+                          (uint32_t)(tex.target == GL_TEXTURE_3D ? d : 1)};
 
     vkCmdCopyBufferToImage(b->commandBuffer, stagingBuffer, tex.image,
                            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);

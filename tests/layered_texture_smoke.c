@@ -1,12 +1,17 @@
 /*
- * DirectMetal layered-texture regression control.
+ * Layered-texture regression control (cubemap faces + 2D-array layers).
  *
- * This intentionally exercises the CPU->MTLTexture upload boundary that is
- * difficult to cover with a normal 2D render smoke: cubemap face selection
- * and 2D-array layer selection.  With MTL_DEBUG_LAYER=1, a wrong mapping of
- * GL face/layer indices to Metal region.depth aborts the process before the
- * GL error checks below, so a clean exit is a useful negative control for the
- * exact validation failure seen in Minecraft resource loading.
+ * Exercises the CPU->GPU upload boundary that a plain 2D render smoke does not
+ * reach: cubemap face selection and 2D-array layer selection. Both are GL 3.x
+ * core features that a Vulkan/MoltenVK backend must map onto image array
+ * layers, and both are easy to get wrong in a way that produces no GL error at
+ * all -- the copy just lands on the wrong layer, or the extent exceeds the
+ * allocated image and the driver silently drops it. That is precisely the
+ * class of failure that rendered Minecraft's resource loading as a red or
+ * empty screen, so a clean exit here is a useful negative control.
+ *
+ * Backend-agnostic: it asserts only that Mithril is the active renderer at a
+ * level we actually implement (3.3 or 4.6), never a specific backend name.
  */
 #include <dlfcn.h>
 #include <stdio.h>
@@ -79,8 +84,10 @@ int main(int argc, char** argv) {
     if (failures) return failures;
 
     const char* version = (const char*)glGetString(GL_VERSION);
-    CHECK(version && strstr(version, "Metal 3 (DirectMetal)"),
-          "forced backend is DirectMetal (%s)", version ? version : "null");
+    CHECK(version && strstr(version, "Mithril-Wrapper") &&
+          (strncmp(version, "3.3", 3) == 0 || strncmp(version, "4.6", 3) == 0),
+          "Mithril-Wrapper is the active renderer at a level we implement (%s)",
+          version ? version : "null");
 
     unsigned char face0[4 * 4 * 4];
     unsigned char face1[4 * 4 * 4];
@@ -126,7 +133,7 @@ int main(int argc, char** argv) {
     glDeleteTextures(1, &cube);
     dlclose(handle);
 
-    printf("DIRECTMETAL LAYERED TEXTURE SMOKE: %s\n",
+    printf("LAYERED TEXTURE SMOKE: %s\n",
            failures ? "FAILED" : "ALL PASSED");
     return failures ? 1 : 0;
 }

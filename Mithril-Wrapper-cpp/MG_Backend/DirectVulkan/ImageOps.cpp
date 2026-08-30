@@ -149,8 +149,13 @@ void generate_mipmaps(GLuint name) {
         const VkFormat fmt = tex.format;
         const VkImageAspectFlags aspect = aspect_for_format(fmt);
         const VkImageType imgType = (tex.target == GL_TEXTURE_3D) ? VK_IMAGE_TYPE_3D : VK_IMAGE_TYPE_2D;
+        // Same 2D-array fix as Resources.cpp: the rebuild path must carry the
+        // array's layer count through, or generate_mipmap rebuilds an N-layer
+        // array as a 1-layer image and drops every layer but the first.
         const uint32_t arrayLayers = (imgType == VK_IMAGE_TYPE_3D) ? 1
-                                   : (tex.target == GL_TEXTURE_CUBE_MAP ? 6 : 1);
+                                   : (tex.target == GL_TEXTURE_CUBE_MAP ? 6
+                                   : (tex.target == GL_TEXTURE_2D_ARRAY
+                                      ? (uint32_t)(tex.depth > 0 ? tex.depth : 1) : 1));
         const bool isCube = (tex.target == GL_TEXTURE_CUBE_MAP);
 
         VkFormatProperties fp{};
@@ -387,7 +392,9 @@ void generate_mipmaps(GLuint name) {
                 vci.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
                 vci.image = newImage;
                 vci.viewType = (tex.target == GL_TEXTURE_3D) ? VK_IMAGE_VIEW_TYPE_3D
-                             : (isCube ? VK_IMAGE_VIEW_TYPE_CUBE : VK_IMAGE_VIEW_TYPE_2D);
+                             : (isCube ? VK_IMAGE_VIEW_TYPE_CUBE
+                             : (tex.target == GL_TEXTURE_2D_ARRAY
+                                ? VK_IMAGE_VIEW_TYPE_2D_ARRAY : VK_IMAGE_VIEW_TYPE_2D));
                 vci.format = fmt;
                 vci.subresourceRange.aspectMask = aspect;
                 vci.subresourceRange.baseMipLevel = 0;

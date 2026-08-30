@@ -1,6 +1,12 @@
 // Mithril-Wrapper - MG_State/Caps.cpp
 #include "Caps.h"
 
+// Build-stamped commit id (injected by CMake as -DMITHRIL_COMMIT_ID="sha").
+// Falls back to "unknown" for local builds, matching MG_Impl/Getter.cpp.
+#ifndef MITHRIL_COMMIT_ID
+#define MITHRIL_COMMIT_ID "unknown"
+#endif
+
 namespace mithril {
 
 // Master list of every extension string we could plausibly advertise. Entries
@@ -72,8 +78,13 @@ const Caps& caps() {
 const std::string& version_string() {
     static const std::string s = [] {
         const Caps& c = caps();
-        return "OpenGL " + std::to_string(c.gl_major) + "." +
-               std::to_string(c.gl_minor) + ".0 Mithril-Wrapper 1.0, Vulkan (MoltenVK) Backend";
+        // Shape mirrors MobileGL: "{TargetGLVersion} {ProjectName} {CoreVersion},
+        // {BackendName} Backend, GIT@{hash}". Both numbers come from
+        // mithril::caps(), so the F3 screen can never report a level whose
+        // entry points are not actually implemented. The section-sign pair is
+        // Minecraft's cyan/reset formatting, which highlights Mithril in F3.
+        return std::to_string(c.gl_major) + "." + std::to_string(c.gl_minor) + ".0 "
+               "§bMithril-Wrapper§r 1.0, Vulkan (MoltenVK) Backend, GIT@" MITHRIL_COMMIT_ID;
     }();
     return s;
 }

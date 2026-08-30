@@ -72,23 +72,14 @@ static const char* kVendor   = "Mithril-Wrapper (EternityQwQ, yitenchen123)";
 #else
 static const char* kRenderer = "Mithril-Wrapper (Vulkan 1.2 / MoltenVK backend)";
 #endif
-// Target desktop OpenGL 4.6 Core Profile. The Vulkan 1.2 / MoltenVK backend
-// implements the full Core Profile 4.6 entry-point set (compute shaders,
-// SSBO, image load/store, ARB_buffer_storage persistent maps, DSA,
-// ARB_vertex_attrib_binding, indirect multi-draw, sample shading, …) that
-// modern Minecraft + Sodium + Iris actually exercise. Metal's hard limits
-// (no geometry/tessellation stages, no fp64) are reported honestly below.
-// The §b (cyan) Minecraft formatting code highlights Mithril in the F3 screen.
+// The advertised GL version / GLSL version / extension set are owned by
+// MG_State/Caps.{h,cpp} and read through mithril::caps() below, so the F3
+// debug screen reports the level we ACTUALLY implement. Do not reintroduce
+// hardcoded version constants here: claiming "OpenGL 4.6" while the 4.x entry
+// points were stubs made Minecraft take 4.6 code paths that sampled undefined
+// descriptors and rendered a pure-red screen (with glGetError swallowing the
+// error, so nothing was ever logged).
 //
-// GL_VERSION follows MobileGL's "{TargetGLVersion} {ProjectName} {CoreVersion},
-// {BackendName} Backend, GIT@{hash}" shape (see MobileGL GL_Getter.cpp): the
-// leading "OpenGL " keeps the string greppable, the backend token names the
-// Vulkan/MoltenVK path, and the GIT@ stamp identifies the exact build for
-// crash-log triage. Concatenation relies on MITHRIL_COMMIT_ID being a string
-// literal macro.
-#define MITHRIL_VERSION_STR "OpenGL 4.6.0 §bMithril-Wrapper§r 1.0, Vulkan (MoltenVK) Backend, GIT@" MITHRIL_COMMIT_ID
-static const char* kVersion  = nullptr; // set from mithril::version_string()
-static const char* kShadingLangVer = nullptr; // set from mithril::glsl_version_string()
 
 // Exposed so the EGL/init path can print the same version string on startup
 // (mirrors MobileGL's "Using graphics backend ... GIT@<hash>" log line) without
@@ -97,7 +88,7 @@ extern "C" const char* mithril_get_version_string(void) {
     return mithril::version_string().c_str();
 }
 
-// Full Core Profile 4.6 extension advertisement. LWJGL capability detection
+// Extension advertisement is owned by MG_State/Caps.cpp (mithril::extensions()). LWJGL capability detection
 // resolves EVERY function pointer of an extension via the platform
 // GetProcAddress; if any one is NULL the whole extension is disabled — so the
 // set below MUST be matched by real implementations of every entry point. The

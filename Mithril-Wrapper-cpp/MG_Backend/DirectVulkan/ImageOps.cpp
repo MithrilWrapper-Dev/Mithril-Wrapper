@@ -650,7 +650,7 @@ int read_pixels(int x, int y, int w, int h, GLenum format, GLenum type, void* ou
     // to update TextureEntry::currentLayout after the reverse barrier below.
     GLuint src_tex_id = 0;
 
-    if (g_state->currentDrawFBO == 0) {
+    if (g_state->currentReadFBO == 0) {
         // EGL default framebuffer: read directly from the swapchain image.
         // The EGL layer installs both the VkImageView and the underlying
         // VkImage + format on g_state when a surface is made current. The
@@ -660,14 +660,25 @@ int read_pixels(int x, int y, int w, int h, GLenum format, GLenum type, void* ou
         src_fmt   = g_state->eglDefaultColorFormat;
         src_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     } else {
-        mithril::Framebuffer* fbo = mithril::state_get_framebuffer(g_state->currentDrawFBO);
-        if (!fbo || !fbo->colors[0].texture) return 0;
+        mithril::Framebuffer* fbo = mithril::state_get_framebuffer(g_state->currentReadFBO);
+        if (!fbo || !fbo->colors[0].texture) {
+            MITHRIL_LOG_WARN("vk", "read_pixels: read FBO %u has no colour "
+                              "attachment (fbo=%p) - returning no data",
+                              g_state->currentReadFBO, (void*)fbo);
+            return 0;
+        }
         src_tex_id = fbo->colors[0].texture;
         src_image = backend_get_texture_image(src_tex_id);
         mithril::Texture* t = mithril::state_get_texture(src_tex_id);
         if (t) src_fmt = gl_internal_to_vk((GLenum)t->internalFormat);
     }
-    if (src_image == VK_NULL_HANDLE) return 0;
+    if (src_image == VK_NULL_HANDLE) {
+        MITHRIL_LOG_WARN("vk", "read_pixels: no source image for read FBO %u "
+                          "(default swapchain image=%p) - returning no data",
+                          g_state->currentReadFBO,
+                          (void*)g_state->eglDefaultColorImage);
+        return 0;
+    }
 
     // Flush any pending rendering into the colour attachment so the readback
     // sees the latest pixels.
@@ -686,12 +697,12 @@ int read_pixels(int x, int y, int w, int h, GLenum format, GLenum type, void* ou
     // no-op, so the subsequent vkCmdCopyImageToBuffer reads the image in the
     // wrong layout and returns garbage (observed as all-zero/black pixels on
     // the offscreen render smoke).
-    if (g_state->currentDrawFBO == 0) {
+    if (g_state->currentReadFBO == 0) {
         // Swapchain image stays in COLOR_ATTACHMENT_OPTIMAL after a render pass
         // (transitioned to PRESENT_SRC_KHR only at present).
         src_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     } else {
-        mithril::Framebuffer* fbo = mithril::state_get_framebuffer(g_state->currentDrawFBO);
+        mithril::Framebuffer* fbo = mithril::state_get_framebuffer(g_state->currentReadFBO);
         if (fbo) {
             auto& tbl = mithril::vk::texture_table();
             auto tit = tbl.find(fbo->colors[0].texture);

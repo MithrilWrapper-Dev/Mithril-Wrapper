@@ -378,10 +378,22 @@ jobs:
               except Exception:
                   bridge = {}
 
-          # If the backend is still dropping draws the framebuffer is a flat
-          # fill of the clear colour, so force the gate to fail. Otherwise
-          # report the measured uniformity of the captured frame.
-          ratio = 1.0 if (shader_err or dropped) else uniform
+          # Judge CONTENT, not colour.
+          #
+          # A real frame is never 100% uniform: even on the loading screen the
+          # Mojang logo and the progress bar cover part of the frame on top of
+          # the clear colour (which is itself red - MC clears to roughly
+          # RGB(239,50,61) during loading, so a "mostly red" frame is CORRECT
+          # and a colour-based gate would fail a perfectly good render).
+          #
+          # A 100%-uniform frame means only the clear happened and no drawn
+          # content is visible - that is exactly the red/blank screen symptom,
+          # whatever colour it happens to be. So fail on uniformity, and keep
+          # the dominant colour and the red-clear fraction as diagnostics.
+          content_ok = uniform < 0.999
+          red_frac = sum(cnt for (r, g, bl), cnt in counts.items()
+                         if r > 200 and g < 80 and bl < 80) / total if total else 1.0
+          ratio = 0.0 if (content_ok and not shader_err and not dropped) else 1.0
           state = {
               'schema_version': '1.0', 'tick': -1,
               'window_width': w, 'window_height': h,
@@ -390,6 +402,8 @@ jobs:
               'gl_version': bridge.get('gl_version', ''),
               'red_pixel_ratio': ratio,
               'uniform_fill_ratio': uniform,
+              'has_rendered_content': content_ok,
+              'red_clear_pixel_fraction': red_frac,
               'dominant_color_rgb': list(dom),
               'shader_compile_errors': shader_err,
               'draws_dropped_by_backend': dropped,

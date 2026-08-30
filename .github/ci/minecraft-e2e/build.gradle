@@ -40,9 +40,19 @@ def evidenceRoot = providers.gradleProperty('evidenceRoot').map { file(it).absol
 tasks.named('runClient') {
     // Route LWJGL at Mithril: the GL entry points come from libmithril.dylib and
     // the window/context layer comes from the EGL bridge dylib.
-    jvmArgs.add("-Dmithril.e2e.root=${evidenceRoot.get()}")
-    jvmArgs.add("-Dorg.lwjgl.glfw.libname=${glfwBridge.get()}")
-    jvmArgs.add("-Dorg.lwjgl.opengl.libname=${mithrilDylib.get()}")
+    // IMPORTANT: build a NEW list and assign it. On Gradle 8.x,
+    // JavaExec#getJvmArgs() returns the value of a ListProperty, which is an
+    // *immutable* list, so `jvmArgs.add(x)` throws
+    // UnsupportedOperationException (ImmutableCollection.add) while the task is
+    // being configured. That is exactly the "Could not create task ':runClient'"
+    // failure this lane hit: the whole root project failed to configure, so the
+    // game never started. Assigning through the setter replaces the property
+    // value with a fresh, mutable list instead of mutating an immutable one.
+    jvmArgs = (jvmArgs ?: []) + [
+        "-Dmithril.e2e.root=${evidenceRoot.get()}",
+        "-Dorg.lwjgl.glfw.libname=${glfwBridge.get()}",
+        "-Dorg.lwjgl.opengl.libname=${mithrilDylib.get()}"
+    ]
 
     // The native bridge reads its configuration from the environment. Older Loom
     // run tasks expose a JavaExec-style environment(...) method; configure it

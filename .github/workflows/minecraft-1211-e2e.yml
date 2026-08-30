@@ -1,0 +1,346 @@
+name: Minecraft 1.21.1 on Mithril (MoltenVK) E2E
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - 'feat/**'
+      - 'fix/**'
+      - main
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mithril-minecraft-1211-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  minecraft-1211-on-mithril:
+    name: Real Minecraft 1.21.1 / Mithril MoltenVK / red-screen gate
+    runs-on: macos-15
+    timeout-minutes: 40
+    env:
+      E2E_ROOT: ${{ github.workspace }}/build/minecraft-e2e-artifacts
+      GRADLE_OPTS: -Dorg.gradle.caching=true
+
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Initialize always-on evidence protocol
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 ci/minecraft-e2e/evidence.py --root "$E2E_ROOT" init
+
+      - name: Fingerprint hosted macOS environment
+        shell: bash
+        run: |
+          set +e
+          {
+            uname -a
+            sw_vers
+            system_profiler SPHardwareDataType SPDisplaysDataType
+            xcodebuild -version
+            clang --version
+          } | tee "$E2E_ROOT/environment-host.txt"
+          rc=${PIPESTATUS[0]}
+          if [[ $rc -ne 0 ]]; then
+            python3 ci/minecraft-e2e/evidence.py --root "$E2E_ROOT" fail \
+              --failure-id INFRA_ENVIRONMENT_FINGERPRINT_FAILED --phase preflight \
+              --message "host fingerprint failed" --retryable
+            exit $rc
+          fi
+          test "$(uname -m)" = arm64 || {
+            python3 ci/minecraft-e2e/evidence.py --root "$E2E_ROOT" fail \
+              --failure-id BUILD_WRONG_ARCH --phase preflight \
+              --message "macos-15 runner is not arm64"
+            exit 12
+          }
+
+      - name: Setup Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Setup Gradle cache
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10'
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+
+      - name: Install native dependencies
+        shell: bash
+        run: |
+          set +e
+          brew install glfw vulkan-loader molten-vk ninja
+          rc=$?
+          if [[ $rc -ne 0 ]]; then
+            python3 ci/minecraft-e2e/evidence.py --root "$E2E_ROOT" fail \
+              --failure-id DEPENDENCY_NATIVE_BOOTSTRAP_FAILED --phase bootstrap \
+              --message "Homebrew native dependencies failed" --retryable
+            exit $rc
+          fi
+          # CI diagnosability: record exactly which MoltenVK the host build links.
+          brew --prefix molten-vk | tee "$E2E_ROOT/moltenvk-prefix.txt"
+          ls -l "$(brew --prefix molten-vk)/lib" | tee "$E2E_ROOT/moltenvk-lib.txt" || true
+
+      - name: Build Mithril production dylib (macOS host, MoltenVK)
+        id: mithril
+        shell: bash
+        run: |
+          set +e
+          cmake -S . -B build-minecraft-e2e-native -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_FLAGS="-Wno-error" \
+            -DCMAKE_CXX_FLAGS="-Wno-error"
+          rc=$?
+          if [[ $rc -eq 0 ]]; then
+            cmake --build build-minecraft-e2e-native --target mithril --parallel
+            rc=$?
+          fi
+          if [[ $rc -ne 0 ]]; then
+            python3 ci/minecraft-e2e/evidence.py --root "$E2E_ROOT" fail \
+              --failure-id BUILD_NATIVE_FAILED --phase native_build \
+              --message "Mithril native (macOS/MoltenVK) build failed"
+            exit $rc
+          fi
+          dylib=$(find build-minecraft-e2e-native -type f -name libmithril.dylib -print | head -1)
+          [[ -s "$dylib" ]] || {
+            python3 ci/minecraft-e2e/evidence.py --root "$E2E_ROOT" fail \
+              --failure-id PACKAGE_DYLIB_MISSING --phase package \
+              --message "libmithril.dylib missing after successful build"
+            exit 14
+          }
+          dylib="$(cd "$(dirname "$dylib")" && pwd)/$(basename "$dylib")"
+          echo "dylib=$dylib" >> "$GITHUB_OUTPUT"
+          shasum -a 256 "$dylib" | tee "$E2E_ROOT/built-mithril.sha256"
+          file "$dylib" | tee "$E2E_ROOT/built-mithril.file.txt"
+          otool -L "$dylib" | tee "$E2E_ROOT/built-mithril.otool.txt"
+          nm -gU "$dylib" | sort > "$E2E_ROOT/built-mithril.exports.txt"
+
+      - name: Prove offscreen real-GPU readback control
+        shell: bash
+        env:
+          MITHRIL_DYLIB: ${{ steps.mithril.outputs.dylib }}
+        run: |
+          set +e
+          export DYLD_LIBRARY_PATH="$(brew --prefix)/lib"
+          clang -std=c11 -O0 -Wall -Wextra -IMithril-Wrapper-cpp/include \
+            -o build-minecraft-e2e-native/render_smoke tests/render_smoke.c -ldl
+          rc=$?
+          if [[ $rc -eq 0 ]]; then
+            build-minecraft-e2e-native/render_smoke "$MITHRIL_DYLIB" \
+              | tee "$E2E_ROOT/native-render-smoke.log"
+            rc=${PIPESTATUS[0]}
+          fi
+          if [[ $rc -ne 0 ]]; then
+            python3 ci/minecraft-e2e/evidence.py --root "$E2E_ROOT" fail \
+              --failure-id RENDER_NATIVE_GPU_CONTROL_FAILED --phase native_control \
+              --message "offscreen render_smoke control failed"
+            exit $rc
+          fi
+          python3 ci/minecraft-e2e/evidence.py --root "$E2E_ROOT" event \
+            --event native_gpu_control_passed --phase native_control \
+            --message "real GPU draw/readback control passed"
+
+      - name: Prove cubemap and array slice semantics
+        shell: bash
+        env:
+          MITHRIL_DYLIB: ${{ steps.mithril.outputs.dylib }}
+        run: |
+          set +e
+          export DYLD_LIBRARY_PATH="$(brew --prefix)/lib"
+          clang -std=c11 -O0 -Wall -Wextra -IMithril-Wrapper-cpp/include \
+            -o build-minecraft-e2e-native/layered_texture_smoke \
+            tests/directmetal_layered_texture_smoke.c -ldl
+          rc=$?
+          if [[ $rc -eq 0 ]]; then
+            build-minecraft-e2e-native/layered_texture_smoke "$MITHRIL_DYLIB" \
+              | tee "$E2E_ROOT/native-layered-texture-smoke.log"
+            rc=${PIPESTATUS[0]}
+          fi
+          if [[ $rc -ne 0 ]]; then
+            python3 ci/minecraft-e2e/evidence.py --root "$E2E_ROOT" fail \
+              --failure-id RENDER_LAYERED_TEXTURE_CONTROL_FAILED --phase native_control \
+              --message "cubemap/array slice regression control failed"
+            exit $rc
+          fi
+          python3 ci/minecraft-e2e/evidence.py --root "$E2E_ROOT" event \
+            --event layered_texture_control_passed --phase native_control \
+            --message "cubemap faces and array layers map to image slices"
+
+      - name: Build GLFW to Mithril EGL/CAMetalLayer bridge with pre-present oracle
+        id: bridge
+        shell: bash
+        run: |
+          set +e
+          mkdir -p build-minecraft-e2e-native/bridge
+          GLFW_PREFIX=$(brew --prefix glfw)
+          GLFW_REAL="$GLFW_PREFIX/lib/libglfw.3.dylib"
+          [[ -f "$GLFW_REAL" ]] || GLFW_REAL="$GLFW_PREFIX/lib/libglfw.dylib"
+          BRIDGE="$PWD/build-minecraft-e2e-native/bridge/libglfw_mithril.dylib"
+          clang++ -std=c++20 -fobjc-arc -dynamiclib -Wall -Wextra \
+            ci/minecraft-e2e/native/glfw_mithril_bridge.mm \
+            ci/minecraft-e2e/native/prepresent_capture.mm \
+            -I"$GLFW_PREFIX/include" -IMithril-Wrapper-cpp/include \
+            -framework AppKit -framework QuartzCore -framework Foundation \
+            -Wl,-reexport_library,"$GLFW_REAL" \
+            -o "$BRIDGE"
+          rc=$?
+          if [[ $rc -ne 0 ]]; then
+            python3 ci/minecraft-e2e/evidence.py --root "$E2E_ROOT" fail \
+              --failure-id BUILD_GLFW_BRIDGE_FAILED --phase bridge_build \
+              --message "GLFW to Mithril pre-present bridge did not compile"
+            exit $rc
+          fi
+          echo "bridge=$BRIDGE" >> "$GITHUB_OUTPUT"
+          echo "glfw_real=$GLFW_REAL" >> "$GITHUB_OUTPUT"
+          file "$BRIDGE" | tee "$E2E_ROOT/glfw-bridge.file.txt"
+          otool -L "$BRIDGE" | tee "$E2E_ROOT/glfw-bridge.otool.txt"
+
+      - name: Run real Minecraft 1.21.1 production client
+        shell: bash
+        run: |
+          set +e
+          cp "$E2E_ROOT/failure.json" "$E2E_ROOT/failure-pre-minecraft.json"
+          rm -f "$E2E_ROOT/failure.json"
+
+          gradle -p .github/ci/minecraft-e2e --build-cache --stacktrace \
+            -PmithrilDylib="${{ steps.mithril.outputs.dylib }}" \
+            -PglfwBridge="${{ steps.bridge.outputs.bridge }}" \
+            -PglfwDelegate="${{ steps.bridge.outputs.glfw_real }}" \
+            -PevidenceRoot="$E2E_ROOT" \
+            runProductionClientGameTest
+          rc=$?
+
+          if [[ $rc -eq 0 ]]; then
+            [[ -f "$E2E_ROOT/failure.json" ]] || \
+              cp "$E2E_ROOT/failure-pre-minecraft.json" "$E2E_ROOT/failure.json"
+          else
+            if [[ -f "$E2E_ROOT/failure.json" ]]; then
+              python3 - "$E2E_ROOT/failure.json" <<'PY'
+          import json, pathlib, sys
+          p=pathlib.Path(sys.argv[1])
+          try: d=json.loads(p.read_text())
+          except Exception: d={}
+          if d.get('failure_id'):
+              d['status']='failed'
+              d.setdefault('retryable', False)
+              p.write_text(json.dumps(d, indent=2, sort_keys=True)+'\n')
+          PY
+            else
+              cp "$E2E_ROOT/failure-pre-minecraft.json" "$E2E_ROOT/failure.json"
+            fi
+            python3 ci/minecraft-e2e/evidence.py --root "$E2E_ROOT" fail \
+              --failure-id RUNTIME_MINECRAFT_E2E_FAILED --phase minecraft_client \
+              --message "Minecraft 1.21.1 client run failed; see oracle-results.json"
+            exit $rc
+          fi
+
+      - name: Verify Mithril identity, GL 3.3 caps gate and red-screen gate
+        shell: bash
+        env:
+          MITHRIL_DYLIB: ${{ steps.mithril.outputs.dylib }}
+        run: |
+          set +e
+          python3 - "$E2E_ROOT" "$MITHRIL_DYLIB" <<'PY'
+          import hashlib, json, pathlib, sys
+          root = pathlib.Path(sys.argv[1]); built = pathlib.Path(sys.argv[2]).resolve()
+          state = json.loads((root/'bridge-state.json').read_text())
+          loaded = pathlib.Path(state['mithril_path']).resolve()
+          def sha(p): return hashlib.sha256(p.read_bytes()).hexdigest()
+
+          identity = {
+            'schema_version': '1.0',
+            'built_path': str(built), 'loaded_path': str(loaded),
+            'built_sha256': sha(built), 'loaded_sha256': sha(loaded),
+            'exact_image': sha(built) == sha(loaded),
+            'context_count': state.get('context_count', 0),
+            'swap_count': state.get('swap_count', 0),
+            'get_proc_address_count': state.get('get_proc_address_count', 0),
+            'gl_vendor': state.get('gl_vendor', ''),
+            'gl_renderer': state.get('gl_renderer', ''),
+            'gl_version': state.get('gl_version', ''),
+          }
+          (root/'wrapper-identity.json').write_text(json.dumps(identity, indent=2)+'\n')
+
+          if not identity['exact_image']:
+              raise SystemExit('WRAPPER_WRONG_IMAGE')
+          if identity['context_count'] < 1:
+              raise SystemExit('WRAPPER_CONTEXT_NOT_CREATED')
+          if identity['swap_count'] < 2:
+              raise SystemExit('PRESENT_NOT_SCHEDULED')
+          # The wrapper must be the one actually driving the game.
+          if 'Mithril-Wrapper' not in identity['gl_version']:
+              raise SystemExit('WRAPPER_NOT_ACTIVE')
+          if 'MoltenVK' not in identity['gl_version']:
+              raise SystemExit('WRAPPER_NOT_MOLTENVK_BACKEND')
+          if 'Mithril-Wrapper' not in identity['gl_renderer']:
+              raise SystemExit('WRAPPER_RENDERER_IDENTITY_MISMATCH')
+          # Caps gate: glGetString(GL_VERSION) must report the level we really
+          # implement (3.3). Advertising 4.6 while 4.x entry points are stubs is
+          # what pushed Minecraft onto undefined 4.6 paths and produced the
+          # pure-red screen, so this is enforced, not just recorded.
+          if not identity['gl_version'].strip().startswith('3.3'):
+              raise SystemExit('WRAPPER_GL_VERSION_NOT_3_3: '
+                               + identity['gl_version'])
+
+          # Red-screen gate straight from the in-game framebuffer sample.
+          gs = json.loads((root/'game-state.json').read_text())
+          red_ratio = float(gs.get('red_pixel_ratio', 1.0))
+          identity['red_pixel_ratio'] = red_ratio
+          (root/'wrapper-identity.json').write_text(json.dumps(identity, indent=2)+'\n')
+          if red_ratio > 0.90:
+              raise SystemExit('PURE_RED_SCREEN_DETECTED: red_pixel_ratio=%.4f' % red_ratio)
+
+          print(json.dumps(identity, indent=2))
+          PY
+          rc=$?
+          if [[ $rc -ne 0 ]]; then
+            python3 ci/minecraft-e2e/evidence.py --root "$E2E_ROOT" fail \
+              --failure-id WRAPPER_IDENTITY_OR_RED_SCREEN_FAILED --phase runtime_identity \
+              --message "Mithril identity / GL 3.3 caps / red-screen gate failed"
+            exit $rc
+          fi
+
+      - name: Collect failure-safe diagnostics
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: |
+          ci/minecraft-e2e/collect-diagnostics.sh \
+            "$E2E_ROOT" \
+            "$PWD/.github/ci/minecraft-e2e/build/run/clientGameTest"
+
+      - name: Finalize machine-readable evidence
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: |
+          if [[ ! -f "$E2E_ROOT/failure.json" && -f "$E2E_ROOT/failure-pre-minecraft.json" ]]; then
+            cp "$E2E_ROOT/failure-pre-minecraft.json" "$E2E_ROOT/failure.json"
+          fi
+          python3 ci/minecraft-e2e/evidence.py --root "$E2E_ROOT" finalize
+
+      - name: Upload E2E evidence
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: mithril-minecraft-1211-e2e-${{ github.sha }}-${{ github.run_attempt }}
+          retention-days: 7
+          if-no-files-found: warn
+          path: build/minecraft-e2e-artifacts/**
+
+      - name: Enforce required L1-L4 oracles
+        if: always()
+        shell: bash
+        run: python3 ci/minecraft-e2e/evidence.py --root "$E2E_ROOT" finalize --assert-pass

@@ -75,6 +75,22 @@ if(APPLE)
             "${CMAKE_SOURCE_DIR}/Mithril-Wrapper-cpp/3rdparty/MoltenVK/MoltenVK.xcframework/Headers"
             "${CMAKE_SOURCE_DIR}/MoltenVK.xcframework/ios-arm64/Headers"
             "${CMAKE_SOURCE_DIR}/MoltenVK.xcframework/ios-arm64_x86_64-simulator/Headers"
+            # --- native macOS host build (CI E2E / local smoke) -------------
+            # `brew install molten-vk vulkan-headers` stages the Vulkan headers
+            # under <prefix>/include/MoltenVK (MoltenVK ships the Vulkan
+            # headers it was built against) and/or <prefix>/include. Without
+            # these fallbacks a host (non-iOS) configure cannot find
+            # vulkan/vulkan.h and CMake stops at REQUIRED.
+            /opt/homebrew/opt/molten-vk/include/MoltenVK
+            /usr/local/opt/molten-vk/include/MoltenVK
+            /opt/homebrew/opt/molten-vk/include
+            /usr/local/opt/molten-vk/include
+            /opt/homebrew/opt/vulkan-headers/include
+            /usr/local/opt/vulkan-headers/include
+            /opt/homebrew/include/MoltenVK
+            /usr/local/include/MoltenVK
+            /opt/homebrew/include
+            /usr/local/include
         NO_CMAKE_FIND_ROOT_PATH
         REQUIRED
     )
@@ -94,6 +110,12 @@ if(APPLE)
             "${CMAKE_SOURCE_DIR}/MoltenVK.xcframework/ios-arm64"
             "${CMAKE_SOURCE_DIR}/MoltenVK.xcframework"
             "${CMAKE_SOURCE_DIR}/Mithril-Wrapper-cpp/3rdparty/MoltenVK"
+            # --- native macOS host build (CI E2E / local smoke) -------------
+            # Homebrew installs libMoltenVK.dylib into <prefix>/lib.
+            /opt/homebrew/opt/molten-vk/lib
+            /usr/local/opt/molten-vk/lib
+            /opt/homebrew/lib
+            /usr/local/lib
         NO_CMAKE_FIND_ROOT_PATH
         REQUIRED
     )

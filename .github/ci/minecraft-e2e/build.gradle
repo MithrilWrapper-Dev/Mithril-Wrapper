@@ -1,0 +1,54 @@
+import org.gradle.process.ExecSpec
+
+plugins {
+    id 'net.fabricmc.fabric-loom' version "${loom_version}"
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    minecraft "com.mojang:minecraft:${project.minecraft_version}"
+    implementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+}
+
+java { toolchain { languageVersion = JavaLanguageVersion.of(21) } }
+
+def mithrilDylib = providers.gradleProperty('mithrilDylib').map { file(it).absolutePath }
+def glfwBridge = providers.gradleProperty('glfwBridge').map { file(it).absolutePath }
+def evidenceRoot = providers.gradleProperty('evidenceRoot').map { file(it).absolutePath }
+
+/**
+ * Production client run lane.
+ *
+ * NOTE: unlike the upstream 26.2 lane this does NOT set MITHRIL_BACKEND: the
+ * legacy Mithril-Wrapper-cpp tree this branch builds has a single
+ * DirectVulkan + MoltenVK backend and no backend-select environment switch.
+ * Only the E2E orchestration variables consumed by the native GLFW bridge and
+ * by MithrilE2EClient are exported.
+ */
+abstract class MithrilClientProductionRunTask extends net.fabricmc.loom.task.prod.ClientProductionRunTask {
+    @Override
+    protected void configureCommand(ExecSpec exec) {
+        super.configureCommand(exec)
+        def project = getProject()
+        exec.environment('MITHRIL_E2E_ROOT', project.file(project.property('evidenceRoot')).absolutePath)
+        exec.environment('MITHRIL_E2E_MITHRIL_DYLIB', project.file(project.property('mithrilDylib')).absolutePath)
+        exec.environment('MITHRIL_E2E_GLFW_DELEGATE', project.file(project.property('glfwDelegate')).absolutePath)
+        // Surface every Mithril log line so a red-screen regression leaves a
+        // trail in the CI job log even when the game itself stays silent.
+        exec.environment('MITHRIL_DEBUG', '1')
+    }
+}
+
+tasks.register('runProductionClientGameTest', MithrilClientProductionRunTask) {
+    dependsOn tasks.named('jar')
+    mods.from(tasks.named('jar'))
+    jvmArgs.add("-Dmithril.e2e.root=${evidenceRoot.get()}")
+    jvmArgs.add("-Dorg.lwjgl.glfw.libname=${glfwBridge.get()}")
+    jvmArgs.add("-Dorg.lwjgl.opengl.libname=${mithrilDylib.get()}")
+    useXVFB = false
+    runDir = file("${buildDir}/run/clientGameTest")
+}

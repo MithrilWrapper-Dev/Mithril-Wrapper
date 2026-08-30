@@ -56,6 +56,7 @@
 #include <glslang/Public/ResourceLimits.h>
 #include <SPIRV/GlslangToSpv.h>
 
+#include <set>
 #include <cstdint>
 #include <mutex>
 #include <regex>
@@ -301,15 +302,36 @@ void inject_vertex_id_fixup(std::string& src, GLenum gl_stage) {
  */
 void apply_attrib_bindings(std::string& src, GLenum gl_stage,
                            const std::unordered_map<std::string, GLuint>* bindings) {
-    if (!bindings || bindings->empty()) return;
     if (gl_stage != GL_VERTEX_SHADER) return;
 
+    // Allow optional precision / interpolation qualifiers between the
+    // interface keyword and the type (e.g. `in highp vec4 Position;`), plus an
+    // optional trailing array suffix. Group 1 = type, 2 = name, 3 = array.
     static std::regex in_decl_re(
-        R"(^\s*(?:layout\s*\([^)]*\)\s*)?(in|attribute)\s+(\w+)\s+(\w+)\s*(\[[^\]]*\])?\s*;)",
+        R"(^\s*(?:layout\s*\([^)]*\)\s*)?(?:in|attribute)\s+(?:(?:highp|mediump|lowp|flat|smooth|noperspective|centroid|sample|patch)\s+)*(\w+)\s+(\w+)\s*(\[[^\]]*\])?\s*;)",
         std::regex::optimize | std::regex::multiline);
 
+    // Locations the application pinned with glBindAttribLocation().
+    std::unordered_map<std::string, GLuint> explicit_locs;
+    std::set<GLuint> used;
+    if (bindings) {
+        for (const auto& kv : *bindings) {
+            explicit_locs[kv.first] = kv.second;
+            used.insert(kv.second);
+        }
+    }
+    // Auto-assign the remaining (or all) attributes in declaration order,
+    // skipping any location the application already claimed.
+    GLuint next_auto = 0;
+    auto take_auto = [&]() -> GLuint {
+        while (used.count(next_auto)) ++next_auto;
+        const GLuint loc = next_auto++;
+        used.insert(loc);
+        return loc;
+    };
+
     std::string out;
-    out.reserve(src.size() + bindings->size() * 24);
+    out.reserve(src.size() + 256);
     std::string::const_iterator search_start(src.cbegin());
     std::smatch m;
     size_t last_pos = 0;
@@ -318,25 +340,26 @@ void apply_attrib_bindings(std::string& src, GLenum gl_stage,
         size_t match_pos = m.position(0) + (search_start - src.cbegin());
         out.append(src, last_pos, match_pos - last_pos);
 
-        const std::string& keyword = m[1].str();   // "in" or "attribute"
-        const std::string& vartype = m[2].str();
-        const std::string& varname = m[3].str();
-        const std::string& array_suffix = m[4].matched ? m[4].str() : std::string();
-        (void)keyword;
+        const std::string& vartype = m[1].str();
+        const std::string& varname = m[2].str();
+        const std::string& array_suffix = m[3].matched ? m[3].str() : std::string();
 
-        auto it = bindings->find(varname);
-        if (it != bindings->end()) {
-            out += "layout(location=";
-            out += std::to_string(it->second);
-            out += ") in ";
-            out += vartype;
-            out += ' ';
-            out += varname;
-            if (!array_suffix.empty()) out += array_suffix;
-            out += ';';
+        GLuint loc = 0;
+        auto it = explicit_locs.find(varname);
+        if (it != explicit_locs.end()) {
+            loc = it->second;
         } else {
-            out += m[0].str();
+            loc = take_auto();
         }
+
+        out += "layout(location=";
+        out += std::to_string(loc);
+        out += ") in ";
+        out += vartype;
+        out += ' ';
+        out += varname;
+        if (!array_suffix.empty()) out += array_suffix;
+        out += ';';
 
         last_pos = match_pos + m[0].length();
         search_start = m.suffix().first;

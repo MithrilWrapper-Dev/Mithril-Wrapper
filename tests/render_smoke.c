@@ -225,10 +225,19 @@ int main(int argc, char** argv) {
     GLint major = 0, minor = 0;
     getIntegerv(GL_MAJOR_VERSION, &major);
     getIntegerv(GL_MINOR_VERSION, &minor);
-    CHECK(major == 4 && minor == 6,
-          "GL version %d.%d (backend-up, glGetIntegerv un-hijacked)", major, minor);
+    /* 与 gl_smoke.c 同样的契约：宣称的等级必须是「我们真正实现的等级」之一，
+     * 且 GL_VERSION 必须与 GL_MAJOR|MINOR_VERSION 自洽。绝不硬编码 4.6 —— 那
+     * 等于断言 bug 本身（大量 4.x 入口仍是 stub，Minecraft 被"骗"进 4.6 路径
+     * 后采样未定义描述符 → 纯红屏）。等级由 MG_State/Caps 单点决定，此处改为
+     * 等级无关的自洽断言，将来 caps 升到 4.6 时本测试无需改动。 */
+    CHECK((major == 3 && minor == 3) || (major == 4 && minor == 6),
+          "advertised GL level is one we implement (got %d.%d)", major, minor);
+    char wantVer[32];
+    snprintf(wantVer, sizeof wantVer, "%d.%d.0", major, minor);
     const char* ver = (const char*)getString(GL_VERSION);
-    CHECK(ver && strstr(ver, "4.6"), "glGetString(GL_VERSION): %s", ver ? ver : "(null)");
+    CHECK(ver && strncmp(ver, wantVer, strlen(wantVer)) == 0,
+          "GL_VERSION starts with advertised %s (got \"%s\")",
+          wantVer, ver ? ver : "(null)");
     if (getError() != GL_NO_ERROR) { printf("FAIL: GL error before setup\n"); ++failures; }
 
     /* ---- 离屏 FBO：RGBA8 纹理作为 color attachment ------------------------ */

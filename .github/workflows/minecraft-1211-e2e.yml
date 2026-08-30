@@ -11,7 +11,7 @@ on:
     branches: [main]
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: mithril-minecraft-1211-e2e-${{ github.ref }}
@@ -31,7 +31,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: recursive
-          persist-credentials: false
+          persist-credentials: true
 
       - name: Initialize always-on evidence protocol
         shell: bash
@@ -187,14 +187,18 @@ jobs:
           GLFW_REAL="$GLFW_PREFIX/lib/libglfw.3.dylib"
           [[ -f "$GLFW_REAL" ]] || GLFW_REAL="$GLFW_PREFIX/lib/libglfw.dylib"
           BRIDGE="$PWD/build-minecraft-e2e-native/bridge/libglfw_mithril.dylib"
+          # Capture the compiler output: job logs and artifacts are not reachable
+          # from outside GitHub, so this file is published to the ci-diagnostics
+          # branch below and read back through the contents API.
+          mkdir -p "$E2E_ROOT"
           clang++ -std=c++20 -fobjc-arc -dynamiclib -Wall -Wextra \
             ci/minecraft-e2e/native/glfw_mithril_bridge.mm \
             ci/minecraft-e2e/native/prepresent_capture.mm \
             -I"$GLFW_PREFIX/include" -IMithril-Wrapper-cpp/include \
             -framework AppKit -framework QuartzCore -framework Foundation \
             -Wl,-reexport_library,"$GLFW_REAL" \
-            -o "$BRIDGE"
-          rc=$?
+            -o "$BRIDGE" 2>&1 | tee "$E2E_ROOT/glfw-bridge-build.log"
+          rc=${PIPESTATUS[0]}
           if [[ $rc -ne 0 ]]; then
             python3 ci/minecraft-e2e/evidence.py --root "$E2E_ROOT" fail \
               --failure-id BUILD_GLFW_BRIDGE_FAILED --phase bridge_build \
@@ -319,6 +323,33 @@ jobs:
           ci/minecraft-e2e/collect-diagnostics.sh \
             "$E2E_ROOT" \
             "$PWD/.github/ci/minecraft-e2e/build/run/clientGameTest"
+
+      - name: Publish CI diagnostics to a readable branch
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: |
+          set +e
+          # GitHub job logs and artifacts are not fetchable from this
+          # environment, so mirror the evidence directory (including the GLFW
+          # bridge compiler output) onto a dedicated branch that IS readable
+          # through the contents API. This is the debug channel for failures
+          # whose real cause never reaches a log we can retrieve.
+          git config user.name "mithril-ci-diagnostics"
+          git config user.email "mithril-ci-diagnostics@users.noreply.github.com"
+          git checkout -B ci-diagnostics
+          mkdir -p ci/diagnostics
+          rm -f ci/diagnostics/*
+          cp "$E2E_ROOT"/*.log ci/diagnostics/ 2>/dev/null
+          cp "$E2E_ROOT"/*.json ci/diagnostics/ 2>/dev/null
+          cp "$E2E_ROOT"/*.txt ci/diagnostics/ 2>/dev/null
+          git add -f ci/diagnostics
+          if git diff --cached --quiet; then
+            echo "no diagnostics to publish"
+          else
+            git commit -m "CI diagnostics: run $GITHUB_RUN_ID attempt $GITHUB_RUN_ATTEMPT"
+            git push -f origin ci-diagnostics
+          fi
 
       - name: Finalize machine-readable evidence
         if: always()

@@ -292,9 +292,15 @@ GLFWwindow* glfwCreateWindow(int width, int height, const char* title,
         emit_event("bridge_error", "Mithril EGL window surface creation failed");
         return nullptr;
     }
+    // Request the level Mithril actually implements. The upstream lane asked for
+    // 4.6; Mithril clamps that to 3.3 internally, but asking for 4.6 while
+    // glGetString(GL_VERSION) reports 3.3 is exactly the "advertise more than we
+    // implement" mismatch that pushed Minecraft onto undefined 4.6 paths and
+    // produced the pure-red screen. Ask for 3.3 so EGL, GL_VERSION and the GLFW
+    // attributes all agree.
     const EGLint contextAttribs[] = {
-        EGL_CONTEXT_MAJOR_VERSION, 4,
-        EGL_CONTEXT_MINOR_VERSION, 6,
+        EGL_CONTEXT_MAJOR_VERSION, 3,
+        EGL_CONTEXT_MINOR_VERSION, 3,
         EGL_CONTEXT_OPENGL_PROFILE_MASK, EGL_CONTEXT_OPENGL_CORE_PROFILE_BIT,
         EGL_NONE
     };
@@ -425,8 +431,8 @@ GLFWglproc glfwGetProcAddress(const char* procname) {
 int glfwGetWindowAttrib(GLFWwindow* window, int attrib) {
     switch (attrib) {
         case GLFW_CLIENT_API: return GLFW_OPENGL_API;
-        case GLFW_CONTEXT_VERSION_MAJOR: return 4;
-        case GLFW_CONTEXT_VERSION_MINOR: return 6;
+        case GLFW_CONTEXT_VERSION_MAJOR: return 3;
+        case GLFW_CONTEXT_VERSION_MINOR: return 3;
         case GLFW_OPENGL_PROFILE: return GLFW_OPENGL_CORE_PROFILE;
         case GLFW_OPENGL_FORWARD_COMPAT: return GLFW_TRUE;
         case GLFW_CONTEXT_CREATION_API: return GLFW_NATIVE_CONTEXT_API;

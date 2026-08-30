@@ -229,13 +229,44 @@ jobs:
           # diagnostics mirror only runs after this step. 600s is ample: Gradle +
           # Loom setup is cached and the 120-tick sample needs seconds. The mod
           # also carries its own 7-minute watchdog as a second net.
-          timeout 600 gradle -p .github/ci/minecraft-e2e --build-cache --stacktrace \
+          #
+          # IMPORTANT: do NOT use GNU `timeout`. The macOS runner has no coreutils
+          # on PATH, so `timeout ... gradle` dies instantly with
+          # "timeout: command not found" and the client never runs at all (that
+          # is exactly how the previous attempt produced a 1-line log and a
+          # failure 57s after job start). This is a portable background + poll
+          # deadline in pure bash instead: no external dependency.
+          gradle -p .github/ci/minecraft-e2e --build-cache --stacktrace \
             -PmithrilDylib="${{ steps.mithril.outputs.dylib }}" \
             -PglfwBridge="${{ steps.bridge.outputs.bridge }}" \
             -PglfwDelegate="${{ steps.bridge.outputs.glfw_real }}" \
             -PevidenceRoot="$E2E_ROOT" \
-            runClient 2>&1 | tee "$E2E_ROOT/minecraft-client-run.log"
-          rc=${PIPESTATUS[0]}
+            runClient > "$E2E_ROOT/minecraft-client-run.log" 2>&1 &
+          gradle_pid=$!
+          deadline=$(( $(date +%s) + 600 ))
+          timed_out=0
+          while kill -0 "$gradle_pid" 2>/dev/null; do
+            if [ "$(date +%s)" -ge "$deadline" ]; then
+              echo "[mithril-e2e] deadline reached; terminating gradle pid $gradle_pid" \
+                >> "$E2E_ROOT/minecraft-client-run.log"
+              # Terminate the game JVM as well, or gradle waits on it forever.
+              pkill -TERM -P "$gradle_pid" 2>/dev/null
+              pkill -TERM -f "net.fabricmc.devlaunchinjector.Main" 2>/dev/null
+              kill -TERM "$gradle_pid" 2>/dev/null
+              sleep 10
+              pkill -KILL -f "net.fabricmc.devlaunchinjector.Main" 2>/dev/null
+              kill -KILL "$gradle_pid" 2>/dev/null
+              timed_out=1
+              break
+            fi
+            sleep 5
+          done
+          if [ "$timed_out" -eq 0 ]; then
+            wait "$gradle_pid"
+            rc=$?
+          else
+            rc=124
+          fi
 
           # Distinguish a hang from a crash: they need completely different
           # follow-up, and a bare non-zero exit makes them look identical.

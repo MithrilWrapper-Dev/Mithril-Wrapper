@@ -132,6 +132,31 @@ extern "C" void mithril_e2e_capture_before_present(int width, int height, void* 
     pixelStorei(GL_PACK_SKIP_IMAGES, 0);
 
     std::vector<unsigned char> rgba(static_cast<size_t>(width) * static_cast<size_t>(height) * 4u);
+
+    // Drain any STALE GL error before the readback.
+    //
+    // GL error flags are sticky: once set, they stay until glGetError() clears
+    // them, and later errors do not replace them. Minecraft had been running
+    // for minutes (the bridge counted 9720 presents) and any earlier call that
+    // reported GL_INVALID_ENUM left 0x0500 pending -- nothing drained it,
+    // because until Stage 1 the wrapper's glGetError() always returned
+    // GL_NO_ERROR, so the game never cleared anything.
+    //
+    // The capture therefore read that OLD error right after its own glReadPixels
+    // and concluded "glReadPixels error 0x0500", even though the readback
+    // itself had never reported a failure. Draining first means the error we
+    // inspect afterwards can only come from this call.
+    int drained = 0;
+    for (int i = 0; i < 64; ++i) {
+        if (getError() == GL_NO_ERROR) break;
+        ++drained;
+    }
+    if (drained > 0) {
+        char detail[96];
+        std::snprintf(detail, sizeof(detail), "drained %d stale GL error(s)", drained);
+        append_event(root, "capture_drained_stale_errors", frame, detail);
+    }
+
     // glReadPixels is synchronous by GL contract. In Mithril this path ends the
     // active render pass, submits the DirectMetal command buffer, blits the
     // current default-color texture into CPU-visible storage, and waits for the

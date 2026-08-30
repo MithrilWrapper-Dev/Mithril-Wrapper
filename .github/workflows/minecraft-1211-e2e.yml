@@ -296,17 +296,38 @@ jobs:
           sleep 120
 
           # 3) Ask the bridge to capture the frame it is about to present.
-          echo 1 > "$E2E_ROOT/render/prepresent-request.txt"
+          #
+          # Re-post the request periodically rather than firing once. The bridge
+          # claims (removes) a request on its very next swap, so a single failed
+          # attempt is consumed and gone -- that is exactly how one run ended
+          # with a lone "prepresent_capture_failed" and then waited out the full
+          # 180s with nothing left to capture. Re-posting gives several chances
+          # within the same window; each file name carries the attempt number so
+          # attempts never overwrite each other.
+          attempt=1
+          post_request() {
+            printf '%s\n' "$attempt" > "$E2E_ROOT/render/prepresent-request.txt"
+          }
+          post_request
 
           # 4) Wait for the bridge to produce the capture.
           captured=""
           cap_deadline=$(( $(date +%s) + 180 ))
+          last_post=$(date +%s)
           while [ "$(date +%s)" -lt "$cap_deadline" ]; do
             for f in "$E2E_ROOT"/render/prepresent-frame-*.meta; do
               if [ -f "$f" ]; then captured="$f"; break; fi
             done
             [ -n "$captured" ] && break
             kill -0 "$gradle_pid" 2>/dev/null || break
+            now=$(date +%s)
+            if [ $(( now - last_post )) -ge 20 ]; then
+              attempt=$(( attempt + 1 ))
+              post_request
+              last_post=$now
+              echo "[mithril-e2e] re-posted capture request (attempt $attempt)" \
+                >> "$E2E_ROOT/minecraft-client-run.log"
+            fi
             sleep 2
           done
           if [ -z "$captured" ]; then

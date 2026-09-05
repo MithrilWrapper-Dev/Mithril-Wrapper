@@ -658,7 +658,7 @@ int read_pixels(int x, int y, int w, int h, GLenum format, GLenum type, void* ou
         // (transitioned to PRESENT_SRC_KHR only at present).
         src_image = g_state->eglDefaultColorImage;
         src_fmt   = g_state->eglDefaultColorFormat;
-        src_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        src_layout = backend_active_swapchain_color_layout();
     } else {
         mithril::Framebuffer* fbo = mithril::state_get_framebuffer(g_state->currentReadFBO);
         if (!fbo || !fbo->colors[0].texture) {
@@ -698,9 +698,19 @@ int read_pixels(int x, int y, int w, int h, GLenum format, GLenum type, void* ou
     // wrong layout and returns garbage (observed as all-zero/black pixels on
     // the offscreen render smoke).
     if (g_state->currentReadFBO == 0) {
-        // Swapchain image stays in COLOR_ATTACHMENT_OPTIMAL after a render pass
-        // (transitioned to PRESENT_SRC_KHR only at present).
-        src_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        // The swapchain image's REAL current layout, resolved AFTER the flush
+        // above. backend_commit() runs commit_frame(), which transitions the
+        // swapchain colour image to PRESENT_SRC_KHR and records that in
+        // Swapchain::currentColorLayout -- so by the time we get here the image
+        // is usually PRESENT_SRC_KHR, NOT COLOR_ATTACHMENT_OPTIMAL.
+        //
+        // Hardcoding COLOR_ATTACHMENT_OPTIMAL was the cause of an all-zero
+        // readback: oldLayout then disagrees with the real layout, MoltenVK
+        // treats the barrier as a no-op, and vkCmdCopyImageToBuffer reads the
+        // image in the wrong layout. The defensive fallback below upgrades
+        // UNDEFINED to COLOR_ATTACHMENT_OPTIMAL, matching the pre-existing
+        // behaviour when nothing is tracked yet.
+        src_layout = backend_active_swapchain_color_layout();
     } else {
         mithril::Framebuffer* fbo = mithril::state_get_framebuffer(g_state->currentReadFBO);
         if (fbo) {
@@ -810,6 +820,12 @@ int read_pixels(int x, int y, int w, int h, GLenum format, GLenum type, void* ou
         auto& tbl = mithril::vk::texture_table();
         auto tit = tbl.find(src_tex_id);
         if (tit != tbl.end()) tit->second.currentLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    }
+    else if (g_state->currentReadFBO == 0) {
+        // The barrier above left the swapchain image in COLOR_ATTACHMENT_OPTIMAL.
+        // Record that, or commit_frame()'s next barrier would use a stale
+        // oldLayout (PRESENT_SRC_KHR) against an image that is no longer in it.
+        backend_set_active_swapchain_color_layout(VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
     }
 
     end_one_shot(c);

@@ -655,6 +655,19 @@ int          backend_swapchain_height(void* swapchain_state);
  * currently acquired.
  */
 VkImage     backend_swapchain_current_color_image(void* swapchain_state);
+/*
+ * Tracked layout of the ACTIVE swapchain's current colour image.
+ *
+ * glReadPixels on the default framebuffer must transition the swapchain image
+ * using its REAL current layout as oldLayout. commit_frame() leaves the image
+ * in PRESENT_SRC_KHR (CommandStream.cpp) and records that in
+ * Swapchain::currentColorLayout; a readback that hardcodes
+ * COLOR_ATTACHMENT_OPTIMAL as oldLayout is a spec violation, MoltenVK treats
+ * the transition as a no-op, and vkCmdCopyImageToBuffer then reads the image
+ * in the wrong layout and yields all-zero pixels.
+ */
+VkImageLayout backend_active_swapchain_color_layout(void);
+void          backend_set_active_swapchain_color_layout(VkImageLayout layout);
 VkFormat    backend_swapchain_color_format(void* swapchain_state);
 VkImage     backend_swapchain_current_depth_image(void* swapchain_state);
 VkFormat    backend_swapchain_depth_format(void* swapchain_state);

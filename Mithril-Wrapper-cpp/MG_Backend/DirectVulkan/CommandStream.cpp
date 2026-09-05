@@ -444,6 +444,8 @@ void set_invalidate_attachments(uint32_t color_mask, bool depth, bool stencil) {
     e.invalidateStencil = stencil;
 }
 
+Swapchain* active_swapchain() { return encoder().activeSwapchain; }
+
 void set_active_swapchain(Swapchain* sc) {
     encoder().activeSwapchain = sc;
 }
@@ -1972,6 +1974,16 @@ void backend_commit(void)          { mithril::vk::commit_frame(); }
 
 void backend_set_active_swapchain(void* swapchain_state) {
     mithril::vk::set_active_swapchain((mithril::vk::Swapchain*)swapchain_state);
+}
+
+VkImageLayout backend_active_swapchain_color_layout(void) {
+    mithril::vk::Swapchain* sc = mithril::vk::active_swapchain();
+    return sc ? sc->currentColorLayout : VK_IMAGE_LAYOUT_UNDEFINED;
+}
+
+void backend_set_active_swapchain_color_layout(VkImageLayout layout) {
+    mithril::vk::Swapchain* sc = mithril::vk::active_swapchain();
+    if (sc) sc->currentColorLayout = layout;
 }
 
 void backend_drain_and_detach_swapchain(void) {

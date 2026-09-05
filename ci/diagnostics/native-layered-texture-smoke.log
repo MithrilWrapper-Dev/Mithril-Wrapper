@@ -1,0 +1,17 @@
+ok  : dlopen /Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/build-minecraft-e2e-native/libmithril.dylib
+ok  : resolve glGenTextures
+ok  : resolve glBindTexture
+ok  : resolve glTexImage2D
+ok  : resolve glTexImage3D
+ok  : resolve glTexSubImage3D
+ok  : resolve glFinish
+ok  : resolve glGetError
+ok  : resolve glGetString
+ok  : resolve glDeleteTextures
+ok  : Mithril-Wrapper is the active renderer at a level we implement (3.3.0 §bMithril-Wrapper§r 1.0, Vulkan (MoltenVK) Backend, GIT@a6525a37127bad0a6c08596355eeeb871563829e)
+ok  : cubemap face 0 upload has no GL error
+ok  : cubemap face 1 maps to Metal slice, not texture depth
+ok  : 2D-array two-layer allocation/upload has no GL error
+ok  : 2D-array two-layer subimage maps layers to Metal slices
+ok  : layered uploads finish without deferred GL error
+LAYERED TEXTURE SMOKE: ALL PASSED

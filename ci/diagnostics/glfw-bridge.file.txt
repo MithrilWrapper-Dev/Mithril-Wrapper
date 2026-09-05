@@ -1,0 +1,1 @@
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/build-minecraft-e2e-native/bridge/libglfw_mithril.dylib: Mach-O 64-bit dynamically linked shared library arm64

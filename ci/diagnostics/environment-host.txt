@@ -1,0 +1,27 @@
+Darwin iad20-gt1019-c19ac258-c989-4fac-9b4d-b7c17cf8c12f-B269FC3B79A3.local 24.6.0 Darwin Kernel Version 24.6.0: Tue Jul 21 20:51:34 PDT 2026; root:xnu-11417.140.69.711.44~1/RELEASE_ARM64_VMAPPLE arm64
+ProductName:		macOS
+ProductVersion:		15.7.9
+BuildVersion:		24G830
+Hardware:
+
+    Hardware Overview:
+
+      Model Name: Apple Virtual Machine 1
+      Model Identifier: VirtualMac2,1
+      Model Number: VM0001LL/A
+      Chip: Apple M1 (Virtual)
+      Total Number of Cores: 3
+      Memory: 7 GB
+      System Firmware Version: mBoot-18000.161.10
+      OS Loader Version: 11881.140.96.701.1
+      Serial Number (system): ZY7Y9FFHK4
+      Hardware UUID: 73868453-3FCE-5AF1-97D7-873F5B9C4097
+      Provisioning UDID: 01f55605ec2d6b303db9f746d11b5d4c3315c266
+      Activation Lock Status: Disabled
+
+Xcode 16.4
+Build version 16F6
+Apple clang version 17.0.0 (clang-1700.0.13.5)
+Target: arm64-apple-darwin24.6.0
+Thread model: posix
+InstalledDir: /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin

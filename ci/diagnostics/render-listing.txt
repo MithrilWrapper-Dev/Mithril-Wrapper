@@ -1,0 +1,5 @@
+total 3216
+drwxr-xr-x   4 runner  staff      128 Sep  5 01:51 .
+drwxr-xr-x  31 runner  staff      992 Sep  5 01:51 ..
+-rw-r--r--   1 runner  staff       16 Sep  5 01:51 prepresent-frame-0001.meta
+-rw-r--r--   1 runner  staff  1639680 Sep  5 01:51 prepresent-frame-0001.rgba

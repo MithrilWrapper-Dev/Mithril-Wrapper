@@ -49,13 +49,21 @@ endif()
 
 # ---------------------------------------------------------------------------
 # MoltenVK: Vulkan 1.2 implementation backed by Metal 2.
-# Linked dynamically via libMoltenVK.dylib (v1.2.9, from Amethyst).
-# Lives at Mithril-Wrapper-cpp/3rdparty/MoltenVK/libMoltenVK.dylib.
-# Post-build patches the install_name reference to match Amethyst's layout.
-# Vulkan headers come from MoltenVK-Headers (extracted from the CI tarball
-# or from the MoltenVK.xcframework/Headers fallback).
+#
+# Match MobileGL/Amethyst's iOS deployment model: libmithril.dylib links the
+# libMoltenVK.dylib already bundled by the host application instead of
+# embedding a second MoltenVK copy from the static xcframework.
+# MITHRIL_VULKAN_LIBRARY lets the host build pass that exact dylib path.
+# If it is omitted, iOS falls back to the vendored Amethyst dylib while native
+# macOS builds fall back to Homebrew. Vulkan headers remain a build-time input.
 # ---------------------------------------------------------------------------
+set(MITHRIL_VULKAN_LIBRARY "" CACHE FILEPATH
+    "Vulkan loader/MoltenVK dylib to link on Apple builds")
+
 if(APPLE)
+    # ios-cmake re-roots include searches under the SDK by default, while the
+    # downloaded MoltenVK headers live in the checkout. Keep this search
+    # explicitly outside CMAKE_FIND_ROOT_PATH.
     find_path(MOLTENVK_INCLUDE_DIR
         NAMES vulkan/vulkan.h
         PATHS
@@ -68,17 +76,48 @@ if(APPLE)
             "${CMAKE_SOURCE_DIR}/Mithril-Wrapper-cpp/3rdparty/MoltenVK/MoltenVK.xcframework/Headers"
             "${CMAKE_SOURCE_DIR}/MoltenVK.xcframework/ios-arm64/Headers"
             "${CMAKE_SOURCE_DIR}/MoltenVK.xcframework/ios-arm64_x86_64-simulator/Headers"
+            /opt/homebrew/opt/molten-vk/include/MoltenVK
+            /usr/local/opt/molten-vk/include/MoltenVK
+            /opt/homebrew/opt/molten-vk/include
+            /usr/local/opt/molten-vk/include
+            /opt/homebrew/opt/vulkan-headers/include
+            /usr/local/opt/vulkan-headers/include
+            /opt/homebrew/include/MoltenVK
+            /usr/local/include/MoltenVK
+            /opt/homebrew/include
+            /usr/local/include
+        NO_CMAKE_FIND_ROOT_PATH
         REQUIRED
     )
     message(STATUS "MoltenVK headers: ${MOLTENVK_INCLUDE_DIR}")
 
-    # Link against the dynamic dylib bundled in the repo.
-    find_library(MOLTENVK_LIBRARY
-        NAMES MoltenVK
-        PATHS "${CMAKE_SOURCE_DIR}/Mithril-Wrapper-cpp/3rdparty/MoltenVK"
-        NO_CMAKE_FIND_ROOT_PATH
-        REQUIRED
-    )
+    if(MITHRIL_VULKAN_LIBRARY)
+        get_filename_component(MOLTENVK_LIBRARY
+            "${MITHRIL_VULKAN_LIBRARY}" ABSOLUTE
+            BASE_DIR "${CMAKE_SOURCE_DIR}")
+        if(NOT EXISTS "${MOLTENVK_LIBRARY}")
+            message(FATAL_ERROR
+                "MITHRIL_VULKAN_LIBRARY does not exist: ${MOLTENVK_LIBRARY}")
+        endif()
+    elseif(IOS AND EXISTS
+            "${CMAKE_SOURCE_DIR}/Mithril-Wrapper-cpp/3rdparty/MoltenVK/libMoltenVK.dylib")
+        set(MOLTENVK_LIBRARY
+            "${CMAKE_SOURCE_DIR}/Mithril-Wrapper-cpp/3rdparty/MoltenVK/libMoltenVK.dylib")
+    else()
+        # Native macOS smoke builds must use a macOS MoltenVK dylib. Do not
+        # consider the vendored Amethyst binary here: it is the iOS runtime
+        # payload and cannot be linked into a native macOS test executable.
+        find_library(MOLTENVK_LIBRARY
+            NAMES MoltenVK libMoltenVK
+            PATHS
+                /opt/homebrew/opt/molten-vk/lib
+                /usr/local/opt/molten-vk/lib
+                /opt/homebrew/lib
+                /usr/local/lib
+            NO_CMAKE_FIND_ROOT_PATH
+            REQUIRED
+        )
+    endif()
     message(STATUS "MoltenVK library: ${MOLTENVK_LIBRARY}")
 endif()
 
@@ -153,17 +192,27 @@ set(MITHRIL_SOURCES
     Mithril-Wrapper-cpp/MG_Impl/Framebuffer.cpp
     Mithril-Wrapper-cpp/MG_Impl/Drawing.cpp
     Mithril-Wrapper-cpp/MG_Impl/Stubs.cpp
+    Mithril-Wrapper-cpp/MG_Impl/GL46_Compat.cpp
     Mithril-Wrapper-cpp/MG_Impl/Debug.cpp
     Mithril-Wrapper-cpp/MG_Impl/lookup.cpp
 
+    # MITHRIL_SOURCES historically but the source files were never committed to
+    # the repo (and no other translation unit references their symbols). They are
+    # out of scope for the GL 3.3 Core Profile target and caused
+    # "Cannot find source file" at configure time. Removed from the build until
+    # the corresponding GL 4.x features are actually implemented.
+
     # MG_State: GL state machine
     Mithril-Wrapper-cpp/MG_State/State.cpp
+    Mithril-Wrapper-cpp/MG_State/Caps.cpp
 
     # MG_Backend: Vulkan 1.2 + MoltenVK direct backend (platform-agnostic core)
     Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/Device.cpp
     Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/Resources.cpp
     Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/FormatMap.cpp
     Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/Reflect.cpp
+    Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/Std140.cpp
+    Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/UniformArena.cpp
     Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/Pipeline.cpp
     Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/DescriptorSet.cpp
     Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/CommandStream.cpp
@@ -187,6 +236,13 @@ set(MITHRIL_SOURCES
     # by the platform file (SurfaceMetal.mm) selected by
     # the APPLE guard below.
     Mithril-Wrapper-cpp/egl/egl.cpp
+
+    # egl/SwapchainHelper.cpp: Vulkan swapchain lifecycle (ensure_swapchain /
+    # install_surface_on_state) extracted out of the former monolithic egl.cpp
+    # so the EGL entry-point layer no longer carries swapchain/Vulkan details.
+    # Plain C++ (the swapchain is owned by the backend), built on every platform.
+    # Shared internal types live in egl/EglInternal.h (header only).
+    Mithril-Wrapper-cpp/egl/SwapchainHelper.cpp
 )
 
 # ---- Platform-specific sources ----
@@ -211,6 +267,26 @@ if(APPLE)
         # .cpp files stay plain C++ — Device.h stores the function pointer as
         # PFN_vkVoidFunction to avoid needing the metal platform define there.
         Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/SwapchainMetal.mm
+    )
+endif()
+
+if(ANDROID)
+    # Android contributes the same three roles as the Apple block above, but as
+    # plain C++: there is no ObjC runtime in the NDK, so nothing here can be
+    # compiled as .mm, and there is no MoltenVK - the platform Vulkan loader
+    # (libvulkan.so) is used directly.
+    list(APPEND MITHRIL_SOURCES
+        # EGL surface: ANativeWindow reference-count handling + size query.
+        Mithril-Wrapper-cpp/egl/SurfaceAndroid.cpp
+        # GPU info strings. The Apple version is .mm only because it includes
+        # <Foundation/Foundation.h>, which does not exist here.
+        Mithril-Wrapper-cpp/MG_Impl/Getter_gpu_android.cpp
+        # Vulkan swapchain: VkSurfaceKHR via VK_KHR_android_surface.
+        Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/SwapchainAndroid.cpp
+        # Vulkan dispatch shim. Provides every vk* symbol the rest of the
+        # codebase calls, forwarding to a driver chosen at runtime, so we no
+        # longer link the platform loader (see the file header for why).
+        Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/VulkanDispatchAndroid.cpp
     )
 endif()
 
@@ -242,30 +318,63 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/Mithril-Wrapper-cpp/3rdparty/SPIRV-Headers/include
 )
 
+if(ANDROID)
+    # The driver-selection hook. A separate shared object, because the whole
+    # technique depends on libvulkan.so binding its android_dlopen_ext /
+    # android_load_sphal_library to us: that needs a distinct mapping inside the
+    # linker namespace we build for the loader, and dlopen of one's own path
+    # would hand back the instance that is already loaded. See the source file
+    # header for what it is for and why the platform loader owns WSI.
+    add_library(mithril_vkhook SHARED
+        Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/AndroidVkHook.cpp
+    )
+    set_target_properties(mithril_vkhook PROPERTIES
+        OUTPUT_NAME mithril_vkhook
+        CXX_STANDARD 20
+    )
+    # -Wl,--exclude-libs and no libdl linkage: this object DEFINES
+    # android_dlopen_ext, so it must not also import it. The real
+    # implementations are fetched explicitly with dlopen("libdl.so") + dlsym.
+    target_link_libraries(mithril_vkhook PRIVATE log)
+    # The hook is deliberately namespace-global: libvulkan.so must bind its
+    # android_dlopen_ext / android_load_sphal_library to ours, which only
+    # happens if our definitions are visible for interposition in the namespace
+    # the loader is loaded into. libadrenotools pairs -z global with RTLD_GLOBAL
+    # for exactly this.
+    #
+    # --exclude-libs,ALL keeps that global symbol group to the hook's own
+    # object: without it the statically linked C++ runtime and compiler
+    # builtins joined the global group too and collided with the ones already
+    # present in the process, which is why the hook failed to load at all.
+    #
+    # -static-libstdc++ binds the C++ runtime statically so the hook has no
+    # DT_NEEDED on libc++_shared.so. The APK does not package that library, and
+    # a missing DT_NEEDED makes dlopen() fail while naming *our* library, so the
+    # launcher log gives no hint about the real cause.
+    target_link_options(mithril_vkhook PRIVATE
+        "-Wl,-z,global"
+        "-Wl,--exclude-libs,ALL"
+        "-static-libstdc++"
+    )
+
+endif()
+
+if(ANDROID)
+    # libandroid for ANativeWindow_*, liblog for stderr routing.
+    #
+    # NOTE: libvulkan is deliberately NOT linked. Linking it hard-binds every
+    # vk* call to whatever driver the platform loader discovers, and the Android
+    # loader only finds drivers through hw_get_module - it ignores
+    # VK_ICD_FILENAMES / VK_DRIVER_FILES. VulkanDispatchAndroid.cpp supplies the
+    # vk* symbols instead and dlopens the driver named by MITHRIL_VULKAN_LIBRARY
+    # or MITHRIL_TURNIP, falling back to libvulkan.so.
+    target_link_libraries(${PROJECT_NAME} PRIVATE android log)
+endif()
+
 if(APPLE)
-    # MoltenVK static framework + Vulkan headers. The framework transitively
-    # links Metal.framework / QuartzCore.framework / Foundation.framework, but
-    # we still list them explicitly to satisfy -framework lookup when the
-    # static link strips MoltenVK's lazy references. UIKit is required because
-    # libMoltenVK.a references UIScreen / UIView (iOS surface/scale handling).
-    #
-    # -force_load: forces the linker to load ALL object files from the MoltenVK
-    # static archive, including C++ static initializers that register Vulkan
-    # instance extensions (VK_EXT_metal_surface, VK_KHR_surface, etc.) at
-    # library load time. Without this flag, the linker may strip object files
-    # whose symbols are not directly referenced — even with -ObjC, which only
-    # preserves Objective-C classes/categories but NOT pure C++ global
-    # constructors. When those initializers are missing,
-    # vkEnumerateInstanceExtensionProperties returns 0 extensions,
-    # VK_EXT_metal_surface is never enabled at instance creation,
-    # vkCreateMetalSurfaceEXT resolves to null, and swapchain creation fails.
-    #
-    # -ObjC: forces the linker to load all Objective-C class/category symbols
-    # from static archives. MoltenVK's libMoltenVK.a contains ObjC++ code
-    # (Metal interop); without this flag, categories may be stripped and cause
-    # runtime "unrecognized selector" crashes. Standard Apple recommendation
-    # for static libraries containing Objective-C. This flag COMBINED with
-    # -force_load above ensures both ObjC and C++ initializers are loaded.
+    # Keep MoltenVK as a runtime dependency, matching MobileGL's Amethyst
+    # integration. This avoids embedding a second MoltenVK implementation in
+    # libmithril.dylib when the host already ships libMoltenVK.dylib.
     target_include_directories(${PROJECT_NAME} PRIVATE ${MOLTENVK_INCLUDE_DIR})
     target_link_libraries(${PROJECT_NAME} PRIVATE
         "${MOLTENVK_LIBRARY}"
@@ -274,20 +383,28 @@ if(APPLE)
         "-framework QuartzCore"
         "-framework CoreGraphics"
         "-framework IOSurface"
-        "-framework UIKit"
     )
-    # The bundled libMoltenVK.dylib has install name
-    # "@rpath/MoltenVK.framework/MoltenVK", but it's a raw dylib, not a
-    # framework bundle. Patch the load reference so libmithril.dylib looks
-    # for "@rpath/libMoltenVK.dylib" instead — which is where Amethyst
-    # places it at runtime.
-    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
-        COMMAND install_name_tool -change
-            "@rpath/MoltenVK.framework/MoltenVK"
-            "@rpath/libMoltenVK.dylib"
-            "$<TARGET_FILE:${PROJECT_NAME}>"
-        COMMENT "Patching MoltenVK load path: @rpath/MoltenVK.framework/MoltenVK → @rpath/libMoltenVK.dylib"
-    )
+
+    if(IOS)
+        target_link_libraries(${PROJECT_NAME} PRIVATE "-framework UIKit")
+
+        # Amethyst places libmithril.dylib and libMoltenVK.dylib in the same
+        # Frameworks directory. Emit only a relocatable @loader_path rpath and
+        # normalize MoltenVK's framework install name to that host layout.
+        set_target_properties(${PROJECT_NAME} PROPERTIES
+            BUILD_RPATH "@loader_path"
+            INSTALL_RPATH "@loader_path"
+            BUILD_WITH_INSTALL_RPATH TRUE
+        )
+        add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+            COMMAND install_name_tool -change
+                "@rpath/MoltenVK.framework/MoltenVK"
+                "@rpath/libMoltenVK.dylib"
+                "$<TARGET_FILE:${PROJECT_NAME}>"
+            COMMENT "Patching MoltenVK load path: @rpath/MoltenVK.framework/MoltenVK → @rpath/libMoltenVK.dylib"
+        )
+    endif()
+
     target_compile_definitions(${PROJECT_NAME} PRIVATE MITHRIL_VULKAN=1)
 else()
     target_link_libraries(${PROJECT_NAME} PRIVATE ${CMAKE_DL_LIBS})

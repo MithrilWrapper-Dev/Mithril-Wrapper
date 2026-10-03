@@ -23,6 +23,7 @@
 #include "CommandStream.h"  // end_render_pass, ensure_command_buffer_recording, render_pass_active
 #include "Swapchain.h"      // acquire semaphore edge for out-of-band submits
 #include "Pipeline.h"     // clear_all_pipeline_caches() for deviceLost recovery
+#include "RenderPassCompat.h"  // clear_render_pass_caches() — classic-path passes
 #include "DescriptorSet.h"  // reset_all_descriptor_pools() for swapchain rebuild recovery
 #include "UniformArena.h"  // ubo_arena_shutdown() — transient UBO arena teardown
 #include "../../MG_State/State.h"  // kMaxTextureUnits 等容量常量（backend_device_limit 用来夹紧上报值）
@@ -203,6 +204,11 @@ void backend_reset_device_lost() {
     // 参考 MobileGL RecreateSwapchain（VulkanRenderer.cpp:8579）：
     // pipelineFactory->DestroyAll() 在 swapchain 重建时销毁全部 pipeline。
     clear_all_pipeline_caches();
+    // Pipelines on the classic path are compiled against a VkRenderPass, so the
+    // passes and framebuffers are as much part of the pipeline state as the
+    // pipelines themselves - leaving them cached across a device loss would hand
+    // out handles belonging to the dead device.
+    clear_render_pass_caches();
     // FIX (VK_NOT_READY storm after deviceLost recovery):
     // Reset the encoder state (passActive, boundPipeline, hasCommands) and
     // commandBufferRecording. Without this, the post-recovery frame inherits
@@ -1148,16 +1154,29 @@ bool init_device() {
     if (dynRenderingExt) {
         devExts.push_back(VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME);
     } else if (!hasDynamicRendering) {
-        MITHRIL_LOG_ERROR("vk",
-            "设备不支持 VK_KHR_dynamic_rendering（%s，Vulkan %u.%u.%u）。"
-            "本渲染器的命令录制完全依赖该扩展，且当前请求的是 Vulkan 1.2"
-            "（dynamic_rendering 要到 1.3 才进核心），没有 VkRenderPass 退路。"
-            "请升级 MoltenVK 到 1.1.0 或更高版本（iOS 14+ / macOS 11+）。",
+        // No longer fatal: there is now a classic render pass path.
+        //
+        // This used to reject the device outright, on the reasoning that the
+        // whole of CommandStream.cpp records through vkCmdBeginRendering, so
+        // without the extension the `if (fn)` guard would skip rendering
+        // silently: the pass gets marked active, draws are recorded against no
+        // attachments, and the result is a black screen with no error and no
+        // log line - the worst possible failure to diagnose.
+        //
+        // MobileGL never needs this extension because it keeps a traditional
+        // VkRenderPass + VkFramebuffer path, which is core Vulkan 1.0.
+        // RenderPassCompat.cpp brings that path here: pipelines are compiled
+        // against a canonical render pass for the format signature, and
+        // begin_render_pass binds a cached framebuffer. So a device without
+        // the extension now runs correctly instead of refusing to start.
+        MITHRIL_LOG_WARN("vk",
+            "VK_KHR_dynamic_rendering 不可用（%s，Vulkan %u.%u.%u）："
+            "改用传统 VkRenderPass/VkFramebuffer 路径（核心 Vulkan 1.0），"
+            "功能等价。",
             b->props.deviceName,
             VK_VERSION_MAJOR(b->props.apiVersion),
             VK_VERSION_MINOR(b->props.apiVersion),
             VK_VERSION_PATCH(b->props.apiVersion));
-        return false;
     }
     // VK_EXT_extended_dynamic_state: vkCmdSetCullMode/FrontFace/DepthTestEnable/
     // DepthWriteEnable/DepthCompareOp etc. without rebuilding pipelines.

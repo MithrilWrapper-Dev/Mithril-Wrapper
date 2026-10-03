@@ -1,10 +1,17 @@
 // Mithril-Wrapper - MG_Backend/DirectVulkan/CommandStream.cpp
 // Render-pass orchestration via VK_KHR_dynamic_rendering (vkCmdBeginRendering)
 // + encoder dynamic-state setters + draw recording + per-frame submit.
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
 #include "CommandStream.h"
 #include "Device.h"
 #include "Swapchain.h"
 #include "Resources.h"  // texture_table() / TextureEntry (root cause Y: FBO layout barriers)
+#include "DescriptorSet.h"  // bind_program_descriptors (compute dispatch path)
+#include "Pipeline.h"       // clear_all_pipeline_caches (OOM recovery)
+#include "RenderPassCompat.h"  // classic VkRenderPass fallback (no dynamic rendering)
+#include "UniformArena.h"   // ubo_arena_rewind (per-frame transient UBO storage)
 #include "../Backend.h"
 #include "../../MG_Impl/Log.h"
 #include "../../MG_State/State.h"  // g_state (for scissorTest in clear_attachments +
@@ -13,6 +20,14 @@
 
 #include <cstring>
 #include <vector>
+#include <unordered_map>
+#include <algorithm>
+
+// glMemoryBarrier bit tested by backend_memory_barrier. The bundled
+// GL/glcorearb.h in include/ predates ARB_shader_image_load_store's token
+// block, so the one value we actually branch on is spelled out locally
+// (prefixed to avoid ever colliding with a future header update).
+#define MG_GL_COMMAND_BARRIER_BIT 0x00000040
 
 namespace mithril {
 namespace vk {
@@ -65,6 +80,12 @@ bool format_has_alpha(VkFormat fmt) {
 struct EncoderState {
     bool passActive = false;
     VkPipeline boundPipeline = VK_NULL_HANDLE;
+    // True once a valid VkDescriptorSet has been bound into the current
+    // command buffer (set by bind_program_descriptors just before
+    // vkCmdBindDescriptorSets). backend_draw_* requires it: a vkCmdDraw with
+    // an unbound descriptor set makes MoltenVK sample undefined memory -> pure
+    // red geometry, and on A11 can fault the GPU at the next submit.
+    bool descriptorsBound = false;
 
     // Pending clear values (applied to the load op of the next pass).
     float clearColor[4] = {0, 0, 0, 0};
@@ -94,6 +115,13 @@ struct EncoderState {
     // races — can submit against a destroyed swapchain's semaphore, triggering
     // MoltenVK / IOSurface UAF crashes).
     bool hasCommands = false;
+
+    // ---- B1 first-frame diagnostic: per-frame recorded draw count ----
+    // Incremented in draw_recording_allowed whenever a vkCmdDraw* is actually
+    // recorded, reset at each fresh command-buffer begin (frame boundary).
+    // Read by eglSwapBuffers' B1 present log to distinguish "draws dropped"
+    // (count 0) from "draws recorded but fragments not visible" (count > 0).
+    uint32_t drawCount = 0;
 
     // ---- Root cause Y (CRITICAL): user-FBO attachment layout transitions ----
     // VK_KHR_dynamic_rendering's vkCmdBeginRendering does NOT auto-transition
@@ -127,6 +155,18 @@ struct EncoderState {
     // start of each begin_render_pass so a previous pass's depth format does
     // not leak into a pass that has no depth attachment.
     VkFormat depthFormat = VK_FORMAT_UNDEFINED;
+
+    // ---- GL 4.3 ARB_invalidate_subdata: per-attachment discard flags ----
+    // Set by glInvalidateFramebuffer/glInvalidateSubFramebuffer via
+    // backend_set_invalidate_attachments. Applied to storeOp in the NEXT
+    // begin_render_pass, then cleared (invalidation is one-shot per GL spec).
+    // On TBDR GPUs (Apple Silicon), storeOp=DONT_CARE means the tile memory
+    // does NOT need to be written back to system memory — critical for
+    // reducing memory bandwidth and VRAM pressure (MobileGL uses the same
+    // pattern via VkAttachmentDescription.storeOp).
+    uint32_t invalidateColorMask = 0;  // bit i = color attachment i discard
+    bool invalidateDepth = false;
+    bool invalidateStencil = false;
 };
 
 EncoderState& encoder() {
@@ -286,6 +326,174 @@ void record_layout_barrier(VkCommandBuffer cb, VkImage image, VkFormat format,
 
 bool render_pass_active() { return encoder().passActive; }
 
+// Accessors for the "valid descriptor set bound in the current command buffer"
+// flag (see EncoderState::descriptorsBound). Defined here because encoder() is
+// an anonymous-namespace object in this TU; DescriptorSet.cpp sets it via
+// set_descriptors_bound() and backend_draw_* reads it via descriptors_bound().
+void set_descriptors_bound(bool bound) { encoder().descriptorsBound = bound; }
+bool descriptors_bound() { return encoder().descriptorsBound; }
+
+/*
+ * ---- Root cause AI (CRITICAL, SIGSEGV inside MVKRenderSubpass) ----
+ * Last line of defence before any vkCmdDraw* is recorded.
+ *
+ * A draw is only legal inside a render-pass instance and with a graphics
+ * pipeline bound. Violating either is undefined behaviour, and MoltenVK's
+ * reaction is not a dropped draw but a null dereference: MVKCommandEncoder
+ * lazily opens the Metal render pass on the first draw, and with no active
+ * render pass its _renderPass is null, so
+ *
+ *   MVKRenderSubpass::populateMTLRenderPassDescriptor()
+ *     MVKPixelFormats* pixFmts = _renderPass->getPixelFormats();
+ *
+ * faults on its very first member access. That is the observed iPhone X
+ * crash (SIGSEGV at populateMTLRenderPassDescriptor+0x3c).
+ *
+ * The GL layer already refuses to draw when prepare_draw() fails
+ * (Drawing.cpp), which is the real fix. This check is deliberately
+ * redundant: it keeps a single missed guard — in existing paths such as the
+ * indirect draws, or in any path added later — from turning a recoverable
+ * pipeline failure into a process abort. The cost is two predictable
+ * branches per draw.
+ */
+static std::unordered_map<uint32_t,uint32_t> s_frameFbo;
+static uint64_t s_atlasTrace=0;
+static uint64_t s_stateTrace=999;
+void debug_atlas_trace(const char* who,int count){
+    if(!std::getenv("MITHRIL_DUMP_BLIT"))return;
+    // trigger file resets the capture window
+    if(const char* root=std::getenv("MITHRIL_E2E_ROOT")){
+        std::string path=std::string(root)+"/render/atlas-trace";
+        FILE* tf=std::fopen(path.c_str(),"r"); if(tf){std::fclose(tf); std::remove(path.c_str()); s_atlasTrace=0;}
+    }
+    uint32_t fbo = mithril::g_state? mithril::g_state->currentDrawFBO:0;
+    if(fbo<9||fbo>13)return;
+    if(s_atlasTrace>=240)return;
+    ++s_atlasTrace;
+    GLuint prog = mithril::g_state? mithril::g_state->currentProgram:0;
+    MITHRIL_LOG_WARN("vk-diag","atlasDraw #%llu who=%s fbo=%u count=%d prog=%u",(unsigned long long)s_atlasTrace,who,fbo,count,prog);
+}
+void debug_frame_fbo_inc(uint32_t fbo){ s_frameFbo[fbo]++; }
+extern "C" void backend_debug_frame_fbo_log() {
+    if (std::getenv("MITHRIL_DUMP_BLIT")) {
+        std::string r;
+        for (auto& k : s_frameFbo) r += std::to_string(k.first)+":"+std::to_string(k.second)+" ";
+        MITHRIL_LOG_WARN("vk-diag","frameFBO [%s]", r.c_str());
+    }
+    s_frameFbo.clear();
+}
+
+bool draw_recording_allowed(const char* who) {
+    static uint64_t d_att=0,d_fbuf=0,d_fpass=0,d_fpipe=0,d_fdesc=0,d_ok=0,d_fbo0=0,d_fbo2=0;
+    bool d_dump = std::getenv("MITHRIL_DUMP_BLIT") != nullptr;
+    ++d_att;
+    auto d_log=[&](const char* r){
+        if (d_dump && ((d_att % 300) == 0)) {
+            MITHRIL_LOG_WARN("vk-diag","drawGate att=%llu ok=%llu nobuf=%llu nopass=%llu nopipe=%llu nodesc=%llu last=%s drawFBO=%u fbo0draws=%llu fbo2draws=%llu",
+              (unsigned long long)d_att,(unsigned long long)d_ok,(unsigned long long)d_fbuf,
+              (unsigned long long)d_fpass,(unsigned long long)d_fpipe,(unsigned long long)d_fdesc,
+              r, mithril::g_state ? mithril::g_state->currentDrawFBO : 0u,
+(unsigned long long)d_fbo0,(unsigned long long)d_fbo2);
+        }
+    };
+    EncoderState& e = encoder();
+    // FIX (VK_NOT_READY storm): verify the command buffer is actually recording
+    // before allowing any draw. passActive can be stale-true after a deviceLost
+    // recovery; recording vkCmdDraw into a non-recording buffer spams VK_NOT_READY.
+    mithril::vk::Backend* b = mithril::vk::backend();
+    if (!b->commandBuffer || !b->commandBufferRecording) {
+        ++d_fbuf; d_log("nobuf"); return false;
+    }
+    if (!e.passActive) {
+        static uint32_t warned = 0;
+        if (warned < 8) {
+            ++warned;
+            MITHRIL_LOG_WARN("vk", "%s: no active render pass — draw dropped "
+                                   "(recording it would crash MoltenVK). This "
+                                   "means a pipeline/pass setup step failed "
+                                   "earlier; see prior warnings.", who);
+        }
+        ++d_fpass; d_log("nopass"); return false;
+    }
+    if (e.boundPipeline == VK_NULL_HANDLE) {
+        static uint32_t warned = 0;
+        if (warned < 8) {
+            ++warned;
+            MITHRIL_LOG_WARN("vk", "%s: no graphics pipeline bound — draw "
+                                   "dropped (undefined behaviour otherwise). "
+                                   "Pipeline creation most likely failed; see "
+                                   "prior warnings.", who);
+        }
+        ++d_fpipe; d_log("nopipe"); return false;
+    }
+    // FIX (GPU page fault / pure-red from frame 1): a vkCmdDraw is only legal
+    // when a valid descriptor set is bound for the current command buffer.
+    // bind_program_descriptors() can bail early (uniform-arena upload failure,
+    // incomplete-set guard, descriptor-pool growth retry failure) AFTER the
+    // pipeline is bound but BEFORE issuing vkCmdBindDescriptorSets. Recording
+    // the draw anyway makes MoltenVK sample an unbound / garbage descriptor
+    // set -> geometry renders pure red and, on A11's Metal 2, can fault the
+    // GPU at the next vkQueueSubmit (kIOGPUCommandBufferCallbackErrorPageFault,
+    // the exact crash in the log: clean wrapper logs, then the first submit
+    // faults). Drop the draw instead: it is safer to miss one draw than to
+    // submit one referencing undefined memory. The flag is reset at every
+    // command-buffer boundary (on_command_buffer_boundary / fresh begin).
+    if (!e.descriptorsBound) {
+        static uint32_t warned = 0;
+        if (warned < 8) {
+            ++warned;
+            MITHRIL_LOG_WARN("vk", "%s: no valid descriptor set bound in this "
+                                   "command buffer — draw dropped (recording it "
+                                   "would sample undefined descriptors -> red / "
+                                   "GPU page fault). bind_program_descriptors "
+                                   "most likely bailed earlier; see prior "
+                                   "warnings.", who);
+        }
+        ++d_fdesc; d_log("nodesc"); return false;
+    }
+    // B1 first-frame diagnostic: a real draw was recorded this frame.
+    ++d_ok;
+    if (getenv("MITHRIL_DRAWKIND") && mithril::g_state && mithril::g_state->currentDrawFBO==3){
+      static int un=0; if(un<20){++un; fprintf(stderr,"[DK] fbo3 OK #%d who=%s prog=%u mode? baseV=%d baseI=%u\n",un,who,mithril::g_state->currentProgram,(int)mithril::g_state->currentBaseVertex,(unsigned)mithril::g_state->currentBaseInstance);}
+    }
+    mithril::vk::debug_frame_fbo_inc(mithril::g_state ? mithril::g_state->currentDrawFBO : 0);
+    if (mithril::g_state) {
+        if (mithril::g_state->currentDrawFBO==0) ++d_fbo0;
+        if (mithril::g_state->currentDrawFBO==2) ++d_fbo2;
+        if (std::getenv("MITHRIL_DUMP_BLIT")) {
+            if (const char* root=std::getenv("MITHRIL_E2E_ROOT")) {
+                std::string tp=std::string(root)+"/render/atlas-trace";
+                FILE* tf=std::fopen(tp.c_str(),"r");
+                if (tf){std::fclose(tf); std::remove(tp.c_str()); s_atlasTrace=0;}
+            }
+            uint32_t fbo=mithril::g_state->currentDrawFBO;
+            if ((fbo>=9&&fbo<=13) && s_atlasTrace<240) {
+                ++s_atlasTrace;
+                MITHRIL_LOG_WARN("vk-diag","atlasDraw #%llu who=%s fbo=%u prog=%u",
+                    (unsigned long long)s_atlasTrace,who,fbo,mithril::g_state->currentProgram);
+            }
+            if (const char* root2=std::getenv("MITHRIL_E2E_ROOT")) {
+                std::string tp2=std::string(root2)+"/render/state-trace";
+                FILE* tf2=std::fopen(tp2.c_str(),"r");
+                if (tf2){std::fclose(tf2); std::remove(tp2.c_str()); s_stateTrace=0;}
+            }
+            if (s_stateTrace<40) {
+                ++s_stateTrace;
+                auto& cm=mithril::g_state->colorMask[0];
+                MITHRIL_LOG_WARN("vk-diag","drawState #%llu fbo=%u prog=%u vp=%d,%d %dx%d sc=%d,%d %dx%d scTest=%d mask=%d%d%d%d blend=%d cull=%d depth=%d",
+                    (unsigned long long)s_stateTrace,fbo,mithril::g_state->currentProgram,
+                    mithril::g_state->viewportX,mithril::g_state->viewportY,mithril::g_state->viewportW,mithril::g_state->viewportH,
+                    mithril::g_state->scissorX,mithril::g_state->scissorY,mithril::g_state->scissorW,mithril::g_state->scissorH,
+                    (int)mithril::g_state->scissorTest,(int)cm[0],(int)cm[1],(int)cm[2],(int)cm[3],
+                    (int)mithril::g_state->isCapabilityEnabled(0x0BE2/*GL_BLEND*/),(int)mithril::g_state->isCapabilityEnabled(0x0B44/*GL_CULL_FACE*/),(int)mithril::g_state->isCapabilityEnabled(0x0B71/*GL_DEPTH_TEST*/));
+            }
+        }
+    }
+    d_log("ok");
+    e.drawCount++;
+    return true;
+}
+
 /*
  * Root cause Z: returns the active render pass's framebuffer height (the
  * attachment extent set in begin_render_pass and clamped to the swapchain /
@@ -307,6 +515,19 @@ void set_clear_color(float r, float g, float b, float a) {
 void set_clear_depth(double d) { encoder().clearDepth = d; }
 void set_clear_stencil(int s)  { encoder().clearStencil = s; }
 void set_load_clear(bool clear){ encoder().loadClear = clear; }
+
+unsigned int backend_get_recorded_draws() { return encoder().drawCount; }
+
+// GL 4.3 ARB_invalidate_subdata: mark attachments for discard (storeOp=DONT_CARE)
+// in the next begin_render_pass. One-shot: cleared after begin_render_pass applies.
+void set_invalidate_attachments(uint32_t color_mask, bool depth, bool stencil) {
+    EncoderState& e = encoder();
+    e.invalidateColorMask = color_mask;
+    e.invalidateDepth = depth;
+    e.invalidateStencil = stencil;
+}
+
+Swapchain* active_swapchain() { return encoder().activeSwapchain; }
 
 void set_active_swapchain(Swapchain* sc) {
     encoder().activeSwapchain = sc;
@@ -439,6 +660,7 @@ bool ensure_command_buffer_recording() {
     }
     b->commandBufferRecording = true;
     encoder().hasCommands = false;  // fresh buffer, no commands yet
+    encoder().drawCount = 0;        // B1: new frame, draw counter starts at 0
 
     // FIX (Invalid Resource 根因 - per-frame transient staging arena rewind):
     // 到达这里意味着 command buffer 被重置+重新 begin（新帧开始）。
@@ -449,6 +671,50 @@ bool ensure_command_buffer_recording() {
     if (b->frameStagingReady) {
         b->frameStagingOffset[b->currentFrame] = 0;
     }
+
+    /* Same rewind, same justification, for the transient UNIFORM arena.
+     *
+     * This is the one place it is legal: the fence wait above proves every
+     * command buffer ever submitted on this slot has finished executing, so
+     * no in-flight draw can still be reading the bytes we are about to hand
+     * out again. Rewinding anywhere else (e.g. at commit_frame time) would
+     * recycle memory the GPU has not finished with. */
+    ubo_arena_rewind(b->currentFrame);
+
+    /* FIX (mid-frame flush 缓存失效 - P0): 到达这里意味着当前 slot 的 arena
+     * 刚被 rewind（staging + UBO）。在"真帧边界"这无害 —— descMemo / UBO
+     * plan 本来就会在下一帧通过 frameGeneration 检查作废。但在帧中间发生
+     * flush（safe_device_wait_idle / drain_and_detach_swapchain 提交了当前
+     * command buffer 后重新 begin）时，本帧前半段分配 arena 切片写成的
+     * descriptor set 与 plan.lastOffset 仍指向这些刚被 rewind 的字节 ——
+     * 后续同帧 draw 复用它们会读到被覆盖的数据。bump flushGeneration 让
+     * bind_program_descriptors 作废这些缓存（见 DescriptorSet.cpp）。 */
+    b->flushGeneration++;
+
+    /* A freshly begun command buffer has no descriptor sets bound, so the
+     * bind-dedup shadow inside DescriptorSet.cpp must be dropped — otherwise
+     * the first draw of the frame would "recognise" a binding that only
+     * existed in the previous buffer and skip a vkCmdBindDescriptorSets it
+     * genuinely needs. */
+    on_command_buffer_boundary();
+
+    /* Root cause AI: pipeline bindings are command-buffer scoped. A reset +
+     * re-begun buffer has no pipeline bound, so the tracking handle must be
+     * cleared here or backend_draw_* would wrongly believe one is live. */
+    encoder().boundPipeline = VK_NULL_HANDLE;
+    // A freshly begun command buffer has no descriptor set bound either.
+    // Reset the flag so backend_draw_* refuses a draw until bind_program_
+    // descriptors() actually binds a set into this buffer.
+    encoder().descriptorsBound = false;
+
+    // FIX (GPU page fault root cause — re-entrant mid-frame purge): this is a
+    // genuine command-buffer boundary: the buffer was just flushed (fence
+    // waited above or via safe_device_wait_idle) and re-begun EMPTY — no render
+    // pass open, no descriptor set bound. Any purge deferred earlier by
+    // request_purge() (OOM / critical-pressure GC while a draw was mid-record)
+    // is now safe to run: it cannot invalidate a set/pipeline the buffer
+    // references. Run it before the first draw of the new buffer.
+    process_pending_purge();
 
     return true;
 }
@@ -565,6 +831,15 @@ void begin_render_pass(VkImageView* color_views, int color_count,
     // spec-discouraged; DONT_CARE matches the discard semantics).
     bool swapchainColorWasUndefined = false;
     bool swapchainDepthWasUndefined = false;
+    // FIX (root cause — user-FBO depth first use): Minecraft renders the
+    // loading screen / main menu / world geometry into USER FBOs with their
+    // OWN depth texture (only the final composite goes to FBO 0). Those depth
+    // textures are created with initialLayout=UNDEFINED and are NEVER cleared
+    // to "far" on first use (see Resources.cpp:1407, Resources.h:58). The
+    // swapchain-only far-init (44772c4) did not cover them, so a first-use
+    // user-FBO depth was loaded as garbage (near/0) and every GL_LESS fragment
+    // failed -> pure red from frame 1. Mirror the swapchain one-shot below.
+    bool fboDepthWasUndefined = false;
     if (e.activeSwapchain) {
         Swapchain* sc = e.activeSwapchain;
         if (sc->currentImage >= 0 && sc->currentImage < (int)sc->views.size()) {
@@ -673,6 +948,11 @@ void begin_render_pass(VkImageView* color_views, int color_count,
                     TextureEntry& tex = it->second;
                     if (tex.image != VK_NULL_HANDLE &&
                         tex.currentLayout != VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) {
+                        // Capture whether this is the depth's ONE-SHOT first use
+                        // (UNDEFINED) so the loadOp below can CLEAR it to far.
+                        // Must be read before the barrier overwrites the layout.
+                        fboDepthWasUndefined =
+                            (tex.currentLayout == VK_IMAGE_LAYOUT_UNDEFINED);
                         record_layout_barrier(b->commandBuffer,
                                               tex.image, tex.format,
                                               tex.currentLayout,
@@ -727,7 +1007,9 @@ void begin_render_pass(VkImageView* color_views, int color_count,
         } else {
             colorAttachs[i].loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
         }
-        colorAttachs[i].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        colorAttachs[i].storeOp = (e.invalidateColorMask & (1u << i))
+                                  ? VK_ATTACHMENT_STORE_OP_DONT_CARE
+                                  : VK_ATTACHMENT_STORE_OP_STORE;
         colorAttachs[i].clearValue.color.float32[0] = e.clearColor[0];
         colorAttachs[i].clearValue.color.float32[1] = e.clearColor[1];
         colorAttachs[i].clearValue.color.float32[2] = e.clearColor[2];
@@ -739,6 +1021,15 @@ void begin_render_pass(VkImageView* color_views, int color_count,
             attachHasAlpha = format_has_alpha(e.activeSwapchain->format);
         }
         colorAttachs[i].clearValue.color.float32[3] = attachHasAlpha ? e.clearColor[3] : 1.0f;
+        // TEMP PROBE (MITHRIL_LOAD_MAGENTA): force user-FBO color load to a
+        // magenta clear (a non-fragment pass action) to test pass targeting.
+        if (std::getenv("MITHRIL_LOAD_MAGENTA") && e.fboColorTexCount > 0) {
+            colorAttachs[i].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+            colorAttachs[i].clearValue.color.float32[0]=1.0f;
+            colorAttachs[i].clearValue.color.float32[1]=0.0f;
+            colorAttachs[i].clearValue.color.float32[2]=1.0f;
+            colorAttachs[i].clearValue.color.float32[3]=1.0f;
+        }
     }
     // Depth/stencil loadOp (MobileGL ResolveDepthStencilAttachmentLoadInfo,
     // VkRenderPassManager.cpp:140-155). Same priority: hasClear -> CLEAR;
@@ -754,16 +1045,45 @@ void begin_render_pass(VkImageView* color_views, int color_count,
     depthAttach.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO_KHR;
     depthAttach.imageView = e.depthView;
     depthAttach.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    // Clear value for the depth/stencil attachment. Honour the host's
+    // glClearDepth for an explicit pass-start clear, EXCEPT on the ONE-SHOT
+    // first use of the persistent swapchain depth buffer (UNDEFINED layout)
+    // where we force far(1.0)/0 to initialise the buffer.
+    //
+    // ROOT CAUSE (systemic pure-red from frame 1): the persistent swapchain
+    // depth buffer is created with initialLayout=UNDEFINED and was NEVER
+    // initialized to "far" on its first use. With the old LOAD_OP_DONT_CARE
+    // the depth buffer holds garbage (typically 0 / near) on the first
+    // depth-tested draw; with the default depth func GL_LESS every fragment
+    // (depth in (0,1]) compares against garbage==near and FAILS, so only the
+    // swapchain clear color (red) survives -> pure red screen from the very
+    // first frame (loading screen, main menu, in-game all red with sound).
+    //
+    // MobileGL initializes the swapchain depth to far on first use. Fix:
+    // on the one-shot UNDEFINED->DEPTH_STENCIL_ATTACHMENT_OPTIMAL first use,
+    // CLEAR the depth buffer to far (1.0) instead of DONT_CARE so the first
+    // depth-tested draw's fragments (depth < 1.0) pass the GL_LESS compare.
+    depthAttach.clearValue.depthStencil.depth = (float)e.clearDepth;
+    depthAttach.clearValue.depthStencil.stencil = (uint32_t)e.clearStencil;
+    // FIX (user-FBO depth first use): mirror the swapchain one-shot — if this
+    // pass is the very first use of a freshly-created (UNDEFINED) depth buffer
+    // — either the swapchain's persistent depth OR a user FBO's depth texture —
+    // clear it to far(1.0)/0 so the first GL_LESS draw's fragments pass.
+    const bool depthWasUndefined = swapchainDepthWasUndefined || fboDepthWasUndefined;
+    if (depthWasUndefined) {
+        depthAttach.clearValue.depthStencil.depth = 1.0f;
+        depthAttach.clearValue.depthStencil.stencil = 0u;
+    }
     if (e.loadClear) {
         depthAttach.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    } else if (swapchainDepthWasUndefined) {
-        depthAttach.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    } else if (depthWasUndefined) {
+        depthAttach.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     } else {
         depthAttach.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
     }
-    depthAttach.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    depthAttach.clearValue.depthStencil.depth = (float)e.clearDepth;
-    depthAttach.clearValue.depthStencil.stencil = (uint32_t)e.clearStencil;
+    depthAttach.storeOp = (e.invalidateDepth || e.invalidateStencil)
+                          ? VK_ATTACHMENT_STORE_OP_DONT_CARE
+                          : VK_ATTACHMENT_STORE_OP_STORE;
 
     VkRenderingInfoKHR ri{};
     ri.sType = VK_STRUCTURE_TYPE_RENDERING_INFO_KHR;
@@ -793,30 +1113,143 @@ void begin_render_pass(VkImageView* color_views, int color_count,
     ri.pStencilAttachment = (e.depthView && format_has_stencil(e.depthFormat))
                             ? &depthAttach : nullptr;
 
-    // Resolve the dynamic-rendering entry point (Vulkan 1.2 + extension).
-    static PFN_vkCmdBeginRenderingKHR fn = nullptr;
-    if (!fn) {
-        fn = (PFN_vkCmdBeginRenderingKHR)vkGetDeviceProcAddr(b->device, "vkCmdBeginRendering");
-        if (!fn) fn = (PFN_vkCmdBeginRenderingKHR)vkGetDeviceProcAddr(b->device, "vkCmdBeginRenderingKHR");
+    if (std::getenv("MITHRIL_PASSLOG")) {
+        static uint64_t pn=0; ++pn;
+        uint32_t tfbo = mithril::g_state? mithril::g_state->currentDrawFBO:0;
+        fprintf(stderr,"[PL] #%llu fbo=%u colors=%d",(unsigned long long)pn,tfbo,color_count);
+        for(int q=0;q<color_count;q++) fprintf(stderr," [c%d L%d S%d]",q,(int)colorAttachs[q].loadOp,(int)colorAttachs[q].storeOp);
+        fprintf(stderr,"\n");
     }
-    if (fn) fn(b->commandBuffer, &ri);
+
+    if (b->dynamicRenderingSupported) {
+        // Resolve the dynamic-rendering entry point (Vulkan 1.2 + extension).
+        static PFN_vkCmdBeginRenderingKHR fn = nullptr;
+        if (!fn) {
+            fn = (PFN_vkCmdBeginRenderingKHR)vkGetDeviceProcAddr(b->device, "vkCmdBeginRendering");
+            if (!fn) fn = (PFN_vkCmdBeginRenderingKHR)vkGetDeviceProcAddr(b->device, "vkCmdBeginRenderingKHR");
+        }
+        if (fn) fn(b->commandBuffer, &ri);
+    } else {
+        // Classic path: vkCmdBeginRenderPass against a cached VkRenderPass +
+        // VkFramebuffer. This is the MobileGL route and needs no extension.
+        //
+        // The load/store ops and clear values computed above for the
+        // dynamic-rendering path are reused verbatim; only the container
+        // differs, so the two paths cannot drift in behaviour.
+        RenderPassKey rkey;
+        rkey.colorCount = (uint32_t)e.colorCount;
+        rkey.samples = VK_SAMPLE_COUNT_1_BIT;
+        bool formatsKnown = true;
+        for (int i = 0; i < e.colorCount; ++i) {
+            VkImageView v = colorAttachs[i].imageView;
+            VkFormat f = VK_FORMAT_UNDEFINED;
+            if (e.activeSwapchain &&
+                v == e.activeSwapchain->views[e.activeSwapchain->currentImage]) {
+                f = e.activeSwapchain->format;
+            } else {
+                f = lookup_view_format(v);
+            }
+            if (f == VK_FORMAT_UNDEFINED) formatsKnown = false;
+            rkey.colorFormats[i] = f;
+            rkey.colorLoadOps[i] = colorAttachs[i].loadOp;
+            rkey.colorStoreOps[i] = colorAttachs[i].storeOp;
+        }
+        rkey.depthFormat = e.depthView ? e.depthFormat : VK_FORMAT_UNDEFINED;
+        if (e.depthView && rkey.depthFormat == VK_FORMAT_UNDEFINED) formatsKnown = false;
+        rkey.depthLoadOp = depthAttach.loadOp;
+        rkey.depthStoreOp = depthAttach.storeOp;
+        // A packed depth-stencil format is ONE attachment, so the stencil ops
+        // ride on it rather than forming a second entry.
+        rkey.stencilLoadOp = depthAttach.loadOp;
+        rkey.stencilStoreOp = depthAttach.storeOp;
+
+        if (!formatsKnown) {
+            // Cannot build a pass without formats. Skipping silently here is
+            // exactly the silent-black-screen failure this fallback exists to
+            // prevent, so say so - once per process, it would otherwise spam.
+            static bool warnedOnce = false;
+            if (!warnedOnce) {
+                warnedOnce = true;
+                fprintf(stderr, "[mithril] render-pass: attachment format unresolved; "
+                                "pass skipped (colors=%d depth=%d). Attachments must be "
+                                "texture-table entries or the active swapchain image.\n",
+                        e.colorCount, e.depthView ? 1 : 0);
+            }
+            return;
+        }
+
+        VkRenderPass rp = get_or_create_render_pass(rkey);
+        if (rp == VK_NULL_HANDLE) return;
+
+        // Attachment order: colors first, then depth/stencil - must match the
+        // VkAttachmentDescription order in create_render_pass().
+        VkImageView attachViews[kMaxRpColorAttachments + 1] = {};
+        VkClearValue clears[kMaxRpColorAttachments + 1] = {};
+        uint32_t attachCount = 0;
+        for (int i = 0; i < e.colorCount; ++i) {
+            attachViews[attachCount] = colorAttachs[i].imageView;
+            clears[attachCount] = colorAttachs[i].clearValue;
+            ++attachCount;
+        }
+        if (e.depthView) {
+            attachViews[attachCount] = e.depthView;
+            clears[attachCount] = depthAttach.clearValue;
+            ++attachCount;
+        }
+
+        VkFramebuffer fb = get_or_create_framebuffer(rp, attachViews, attachCount,
+                                                     (uint32_t)e.width, (uint32_t)e.height);
+        if (fb == VK_NULL_HANDLE) return;
+
+        VkRenderPassBeginInfo bi{};
+        bi.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+        bi.pNext = nullptr;
+        bi.renderPass = rp;
+        bi.framebuffer = fb;
+        bi.renderArea.offset.x = 0;
+        bi.renderArea.offset.y = 0;
+        bi.renderArea.extent.width = (uint32_t)e.width;
+        bi.renderArea.extent.height = (uint32_t)e.height;
+        bi.clearValueCount = attachCount;
+        bi.pClearValues = attachCount > 0 ? clears : nullptr;
+        vkCmdBeginRenderPass(b->commandBuffer, &bi, VK_SUBPASS_CONTENTS_INLINE);
+    }
 
     e.passActive = true;
     e.hasCommands = true;  // begin_render_pass recorded real commands
     e.loadClear = false;  // subsequent passes within the frame use LOAD
+    // GL 4.3 ARB_invalidate_subdata: invalidation is one-shot — clear after
+    // applying so the next pass uses default STORE (unless re-invalidated).
+    e.invalidateColorMask = 0;
+    e.invalidateDepth = false;
+    e.invalidateStencil = false;
 }
 
 void end_render_pass() {
     Backend* b = backend();
     EncoderState& e = encoder();
-    if (!e.passActive || !b->commandBuffer) return;
-
-    static PFN_vkCmdEndRenderingKHR fn = nullptr;
-    if (!fn) {
-        fn = (PFN_vkCmdEndRenderingKHR)vkGetDeviceProcAddr(b->device, "vkCmdEndRendering");
-        if (!fn) fn = (PFN_vkCmdEndRenderingKHR)vkGetDeviceProcAddr(b->device, "vkCmdEndRenderingKHR");
+    // FIX (VK_NOT_READY storm): only call vkCmdEndRendering when the command
+    // buffer is recording. If passActive is stale-true after a deviceLost
+    // (commit_frame returned early without end_render_pass) and the buffer
+    // is not recording, calling vkCmdEndRendering spams VK_NOT_READY.
+    // Clear passActive regardless so the encoder state is consistent.
+    if (!e.passActive) return;
+    if (!b->commandBuffer || !b->commandBufferRecording) {
+        e.passActive = false;
+        return;
     }
-    if (fn) fn(b->commandBuffer);
+
+    if (b->dynamicRenderingSupported) {
+        static PFN_vkCmdEndRenderingKHR fn = nullptr;
+        if (!fn) {
+            fn = (PFN_vkCmdEndRenderingKHR)vkGetDeviceProcAddr(b->device, "vkCmdEndRendering");
+            if (!fn) fn = (PFN_vkCmdEndRenderingKHR)vkGetDeviceProcAddr(b->device, "vkCmdEndRenderingKHR");
+        }
+        if (fn) fn(b->commandBuffer);
+    } else {
+        // Core Vulkan 1.0 - vkCmdEndRenderPass needs no extension.
+        vkCmdEndRenderPass(b->commandBuffer);
+    }
 
     // ---- Root cause Y (CRITICAL): barrier user-FBO attachments back to ----
     // ---- read-only layouts and update TextureEntry::currentLayout.      --
@@ -912,10 +1345,55 @@ void end_render_pass() {
  * MobileGL (VulkanRenderer.cpp:4230-4358) uses the same vkCmdClearAttachments
  * approach, respecting GL_SCISSOR_TEST for the clear rect.
  */
+/*
+ * Resolve the rectangle a clear applies to. GL's scissor test clips clears,
+ * so an enabled scissor box wins; otherwise the whole render area is cleared.
+ *
+ * Everything is clamped to the render pass's effective dimensions
+ * (e.width/e.height, themselves already clamped to the swapchain image in
+ * begin_render_pass). A clear rect larger than the attachment violates
+ * VUID-vkCmdClearAttachments-pRects-00016 and takes MoltenVK's
+ * IOSurfaceBindAccel down with a SIGSEGV on iOS — so this clamp is load
+ * bearing, not defensive tidiness.
+ */
+static VkClearRect compute_clear_rect(const EncoderState& e) {
+    VkClearRect rect{};
+    if (mithril::g_state && mithril::g_state->scissorTest) {
+        int32_t sx = (int32_t)mithril::g_state->scissorX;
+        int32_t sy = (int32_t)mithril::g_state->scissorY;
+        int32_t sw = (int32_t)mithril::g_state->scissorW;
+        int32_t sh = (int32_t)mithril::g_state->scissorH;
+        if (sx < 0) { sw += sx; sx = 0; }
+        if (sy < 0) { sh += sy; sy = 0; }
+        if (sx + sw > e.width)  sw = e.width - sx;
+        if (sy + sh > e.height) sh = e.height - sy;
+        if (sw < 0) sw = 0;
+        if (sh < 0) sh = 0;
+        rect.rect.offset.x = sx;
+        rect.rect.offset.y = sy;
+        rect.rect.extent.width = (uint32_t)sw;
+        rect.rect.extent.height = (uint32_t)sh;
+    } else {
+        rect.rect.offset.x = 0;
+        rect.rect.offset.y = 0;
+        rect.rect.extent.width = (uint32_t)e.width;
+        rect.rect.extent.height = (uint32_t)e.height;
+    }
+    rect.baseArrayLayer = 0;
+    rect.layerCount = 1;
+    return rect;
+}
+
 void clear_attachments(uint32_t mask, int x, int y, int w, int h) {
     Backend* b = backend();
     EncoderState& e = encoder();
-    if (!b->commandBuffer || !e.passActive) return;
+    // FIX (VK_NOT_READY storm): guard against recording into a command buffer
+    // that is not in the RECORDING state. passActive can be stale-true after
+    // a deviceLost recovery that did not reset the encoder, or a mid-frame
+    // deviceLost where commit_frame returned early without end_render_pass.
+    // Without this check vkCmdClearAttachments records into a non-recording
+    // buffer -> MoltenVK spams VK_NOT_READY.
+    if (!b->commandBuffer || !b->commandBufferRecording || !e.passActive) return;
     if (mask == 0) return;
 
     // Build the VkClearAttachment array for the requested aspects.
@@ -956,49 +1434,73 @@ void clear_attachments(uint32_t mask, int x, int y, int w, int h) {
     }
     if (attaches.empty()) return;
 
-    // Determine the clear rect. GL scissor test clips the clear region.
-    // When scissor is disabled, clear the full framebuffer rect.
-    // Clamp to the render pass's effective dimensions (e.width/e.height),
-    // which were already clamped to the swapchain image dimensions in
-    // begin_render_pass. Without this, a clear rect larger than the
-    // attachment causes a spec violation (VUID-vkCmdClearAttachments-pRects-00016)
-    // and can crash MoltenVK's IOSurfaceBindAccel on iOS.
-    VkClearRect rect{};
-    if (mithril::g_state && mithril::g_state->scissorTest) {
-        rect.rect.offset.x = mithril::g_state->scissorX;
-        rect.rect.offset.y = mithril::g_state->scissorY;
-        rect.rect.extent.width = (uint32_t)mithril::g_state->scissorW;
-        rect.rect.extent.height = (uint32_t)mithril::g_state->scissorH;
-        // Clamp scissor rect to the render pass's effective dimensions
-        // (e.width/e.height, already clamped to drawable/swapchain size).
-        // A scissor rect extending past the IOSurface causes the same
-        // IOSurfaceBindAccel SIGSEGV as an oversized render area.
-        int32_t sx = (int32_t)rect.rect.offset.x;
-        int32_t sy = (int32_t)rect.rect.offset.y;
-        int32_t sw = (int32_t)rect.rect.extent.width;
-        int32_t sh = (int32_t)rect.rect.extent.height;
-        if (sx < 0) { sw += sx; sx = 0; }
-        if (sy < 0) { sh += sy; sy = 0; }
-        if (sx + sw > e.width)  sw = e.width - sx;
-        if (sy + sh > e.height) sh = e.height - sy;
-        if (sw < 0) sw = 0;
-        if (sh < 0) sh = 0;
-        rect.rect.offset.x = (uint32_t)sx;
-        rect.rect.offset.y = (uint32_t)sy;
-        rect.rect.extent.width = (uint32_t)sw;
-        rect.rect.extent.height = (uint32_t)sh;
-    } else {
-        rect.rect.offset.x = 0;
-        rect.rect.offset.y = 0;
-        rect.rect.extent.width = (uint32_t)e.width;
-        rect.rect.extent.height = (uint32_t)e.height;
-    }
-    rect.baseArrayLayer = 0;
-    rect.layerCount = 1;
-
+    VkClearRect rect = compute_clear_rect(e);
     vkCmdClearAttachments(b->commandBuffer,
                           (uint32_t)attaches.size(), attaches.data(),
                           1, &rect);
+    e.hasCommands = true;
+}
+
+/*
+ * glClearBuffer{fv,iv,uiv,fi} — clear ONE attachment with an explicit value
+ * (root cause AP).
+ *
+ * clear_attachments() above always clears every colour attachment using the
+ * context-wide glClearColor. That is right for glClear(), but glClearBuffer*
+ * targets a single draw buffer with a value passed at the call site — which
+ * is how a deferred renderer wipes just its normal or velocity target between
+ * passes. Without this entry point those calls did nothing at all, leaving
+ * the previous frame's G-buffer contents to bleed through.
+ *
+ * `drawbuffer` indexes the colour attachment for GL_COLOR and must be 0 for
+ * the depth/stencil targets.
+ */
+void clear_buffer_indexed(uint32_t buffer, int drawbuffer,
+                          const float color[4], float depth, uint32_t stencil) {
+    Backend* b = backend();
+    EncoderState& e = encoder();
+    // FIX (VK_NOT_READY storm): same commandBufferRecording guard as
+    // clear_attachments — prevents recording into a non-recording buffer.
+    if (!b->commandBuffer || !b->commandBufferRecording || !e.passActive) return;
+
+    VkClearAttachment a{};
+    switch (buffer) {
+        case GL_COLOR:
+            if (drawbuffer < 0 || drawbuffer >= e.colorCount) return;
+            a.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            a.colorAttachment = (uint32_t)drawbuffer;
+            a.clearValue.color.float32[0] = color[0];
+            a.clearValue.color.float32[1] = color[1];
+            a.clearValue.color.float32[2] = color[2];
+            // Same swapchain-alpha rule as clear_attachments: a format
+            // without alpha must be cleared to opaque or the compositor
+            // blends the whole frame away.
+            a.clearValue.color.float32[3] =
+                (!e.activeSwapchain || format_has_alpha(e.activeSwapchain->format))
+                ? color[3] : 1.0f;
+            break;
+        case GL_DEPTH:
+            if (!e.depthView) return;
+            a.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+            a.clearValue.depthStencil.depth = depth;
+            break;
+        case GL_STENCIL:
+            if (!e.depthView) return;
+            a.aspectMask = VK_IMAGE_ASPECT_STENCIL_BIT;
+            a.clearValue.depthStencil.stencil = stencil;
+            break;
+        case GL_DEPTH_STENCIL:
+            if (!e.depthView) return;
+            a.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
+            a.clearValue.depthStencil.depth = depth;
+            a.clearValue.depthStencil.stencil = stencil;
+            break;
+        default:
+            return;
+    }
+
+    VkClearRect rect = compute_clear_rect(e);
+    vkCmdClearAttachments(b->commandBuffer, 1, &a, 1, &rect);
     e.hasCommands = true;
 }
 
@@ -1121,12 +1623,21 @@ void commit_frame() {
                 sc->currentColorLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
             }
             // Minimal render pass to trigger IOSurface binding.
+            // FIX (first-frame priming): use CLEAR with black instead of
+            // DONT_CARE. DONT_CARE leaves the image contents undefined, which
+            // can show garbage pixels on the first frame before any draws are
+            // recorded. CLEAR ensures a clean black frame. MobileGL primes the
+            // first swapchain image in Initialize() for the same reason.
             VkRenderingAttachmentInfoKHR dummyAttach{};
             dummyAttach.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO_KHR;
             dummyAttach.imageView = sc->views[sc->currentImage];
             dummyAttach.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-            dummyAttach.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+            dummyAttach.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
             dummyAttach.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+            dummyAttach.clearValue.color.float32[0] = 0.0f;
+            dummyAttach.clearValue.color.float32[1] = 0.0f;
+            dummyAttach.clearValue.color.float32[2] = 0.0f;
+            dummyAttach.clearValue.color.float32[3] = 1.0f;
             VkRenderingInfoKHR dummyRI{};
             dummyRI.sType = VK_STRUCTURE_TYPE_RENDERING_INFO_KHR;
             dummyRI.renderArea.offset.x = 0;
@@ -1204,6 +1715,11 @@ void commit_frame() {
         if (vkBeginCommandBuffer(b->commandBuffer, &rbi) == VK_SUCCESS) {
             b->commandBufferRecording = true;
         }
+        // This reset+begin bypasses ensure_command_buffer_recording(), so the
+        // descriptor bind shadow has to be dropped here too: it names a set
+        // bound into a buffer that no longer exists, and believing it would
+        // make the next draw skip a vkCmdBindDescriptorSets it needs.
+        on_command_buffer_boundary();
         e.hasCommands = false;
         if (sc) sc->needsRebuild = true;
         // 持续失败时标记 deviceLost，避免无限重试刷屏
@@ -1231,11 +1747,18 @@ void commit_frame() {
     // (FrameContext.cpp:191-193).
     VkSemaphore waitSemaphore = VK_NULL_HANDLE;
     VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    if (sc && sc->imageAvailable != VK_NULL_HANDLE && !sc->imageAvailableConsumed) {
-        waitSemaphore = sc->imageAvailable;
-        si.waitSemaphoreCount = 1;
-        si.pWaitSemaphores = &waitSemaphore;
-        si.pWaitDstStageMask = &waitStage;
+    if (sc && !sc->imageAvailableConsumed) {
+        const int slot = sc->imageAvailableFrameSlot;
+        if (slot >= 0 && slot < (int)sc->imageAvailablePerFrame.size() &&
+            sc->imageAvailablePerFrame[slot] != VK_NULL_HANDLE) {
+            waitSemaphore = sc->imageAvailablePerFrame[slot];
+            si.waitSemaphoreCount = 1;
+            si.pWaitSemaphores = &waitSemaphore;
+            si.pWaitDstStageMask = &waitStage;
+        } else {
+            MITHRIL_LOG_ERROR("vk", "commit_frame: acquired swapchain image has no valid acquire semaphore");
+            sc->needsRebuild = true;
+        }
     }
 
     // ---- Signal renderFinished so present can wait on it ----
@@ -1299,21 +1822,29 @@ void commit_frame() {
                                   "attempt recovery", deviceLostLogCount);
             }
         } else {
-            // OOM 或其他错误：触发 OOM GC，不设置 deviceLost
+            // OOM 或其他错误：在 Metal 上 OOM 经常意味着 GPU 已 fault
+            //（MoltenVK 的 "Caused GPU Address Fault Error"）。
+            // 旧代码只做 GC 不设 deviceLost，但 vkDeviceWaitIdle 后设备可能
+            // 已半死状态 — 后续 vkBeginCommandBuffer 成功但所有 vkCmd* 报
+            // VK_NOT_READY。现在也设 deviceLost，让 EGL 走恢复路径
+            //（purge + rebuild swapchain），而不是在半死设备上继续渲染。
             b->consecutiveSubmitFailures++;
+            b->deviceLost = true;  // FIX: OOM on Metal = likely faulted
             static int submitFailCount = 0;
             submitFailCount++;
             if (submitFailCount <= 3 || submitFailCount % 100 == 0) {
                 MITHRIL_LOG_ERROR("vk", "vkQueueSubmit failed (rc=%d, occurrence "
-                                  "#%d) — triggering OOM GC, skipping frame",
+                                  "#%d) — setting deviceLost (OOM on Metal likely "
+                                  "means GPU fault), triggering recovery",
                                   (int)r, submitFailCount);
             }
             // OOM 主动 GC：等待 GPU 完成 + 释放所有延迟资源
-            // 参考 MobileGL TryDrainFrameTransients（每帧 present 前主动 drain）
             if (b->device) {
                 vkDeviceWaitIdle(b->device);
             }
             drain_all_disposal_queues();
+            clear_all_pipeline_caches();
+            reset_all_descriptor_pools();
         }
         // vkQueueSubmit failure (e.g. VK_ERROR_OUT_OF_DEVICE_MEMORY /
         // VK_ERROR_DEVICE_LOST) means the command buffer was NOT consumed.
@@ -1339,13 +1870,40 @@ void commit_frame() {
             sc->needsRebuild = true;
         }
         // Reset+begin so the next frame has a recording buffer.
-        vkResetCommandBuffer(b->commandBuffer, 0);
-        VkCommandBufferBeginInfo rbi{};
-        rbi.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-        rbi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-        if (vkBeginCommandBuffer(b->commandBuffer, &rbi) == VK_SUCCESS) {
-            b->commandBufferRecording = true;
+        // FIX (VK_NOT_READY storm): When deviceLost is true (OOM / DEVICE_LOST
+        // paths above), skip vkResetCommandBuffer + vkBeginCommandBuffer — the
+        // device is in an error state and vkBeginCommandBuffer will likely fail
+        // or produce a buffer that can't accept commands. Instead, clear the
+        // encoder state (passActive, boundPipeline, etc.) and set
+        // commandBufferRecording=false so that:
+        //   1. end_render_pass won't call vkCmdEndRendering on a non-recording
+        //      buffer (passActive=false → early return)
+        //   2. draw_recording_allowed won't allow vkCmdDraw (commandBufferRecording
+        //      =false → returns false)
+        //   3. The recovery path (backend_reset_device_lost → reset_encoder_state)
+        //      will handle the fresh vkBeginCommandBuffer after the device is
+        //      actually recovered
+        if (!b->deviceLost) {
+            vkResetCommandBuffer(b->commandBuffer, 0);
+            VkCommandBufferBeginInfo rbi{};
+            rbi.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+            rbi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+            if (vkBeginCommandBuffer(b->commandBuffer, &rbi) == VK_SUCCESS) {
+                b->commandBufferRecording = true;
+            }
+        } else {
+            // Device is lost: clear encoder state to prevent stale passActive
+            // from causing VK_NOT_READY errors on subsequent vkCmd* calls.
+            e.passActive = false;
+            e.boundPipeline = VK_NULL_HANDLE;
+            e.hasCommands = false;
+            b->commandBufferRecording = false;
         }
+        // This reset+begin bypasses ensure_command_buffer_recording(), so the
+        // descriptor bind shadow has to be dropped here too: it names a set
+        // bound into a buffer that no longer exists, and believing it would
+        // make the next draw skip a vkCmdBindDescriptorSets it needs.
+        on_command_buffer_boundary();
         e.hasCommands = false;
         return;
     }
@@ -1371,6 +1929,13 @@ void commit_frame() {
     // start signaled (VK_FENCE_CREATE_SIGNALED_BIT), so the first frame's
     // wait is correctly skipped (flag starts false).
     b->fencePending[b->currentFrame] = true;
+
+    // Stamp this submission with a monotonic serial so GL sync objects
+    // (glFenceSync / glClientWaitSync) can tell when it has actually completed
+    // on the GPU (see Device.cpp backend_wait_serial). Must run before the
+    // currentFrame advance below, so the serial is pinned to the slot we just
+    // submitted.
+    backend_frame_serial_advance(b->currentFrame);
 
     // CRITICAL FIX: do NOT vkResetCommandBuffer here.
     //
@@ -1488,6 +2053,48 @@ void drain_and_detach_swapchain() {
     b->commandBufferRecording = false;
 }
 
+/*
+ * FIX (VK_NOT_READY storm after deviceLost recovery):
+ * Reset the encoder state to a clean "no pass active" baseline.
+ *
+ * When deviceLost is set mid-frame, commit_frame() returns early WITHOUT
+ * calling end_render_pass() (it checks deviceLost at the very top), so
+ * encoder().passActive stays true. The next frame's GL calls then see
+ * passActive=true and record vkCmd* into b->commandBuffer — but that buffer
+ * was never vkBeginCommandBuffer'd (ensure_command_buffer_recording returned
+ * false during deviceLost). MoltenVK rejects every command with
+ * "Command buffer cannot accept commands before vkBeginCommandBuffer() is
+ * called" (VK_NOT_READY), producing thousands of identical errors per frame.
+ *
+ * backend_reset_device_lost() calls this after a successful swapchain rebuild
+ * so the post-recovery frame starts clean: begin_render_pass() re-calls
+ * ensure_command_buffer_recording() (now succeeds because deviceLost=false),
+ * begins a fresh command buffer, and only then sets passActive=true.
+ *
+ * Also resets commandBufferRecording — the alias b->commandBuffer may point
+ * at a stale/pending slot; forcing a re-begin via ensure_command_buffer_recording
+ * on the next recording attempt avoids recording into a dead buffer.
+ */
+void reset_encoder_state() {
+    EncoderState& e = encoder();
+    e.passActive = false;
+    e.boundPipeline = VK_NULL_HANDLE;
+    e.hasCommands = false;
+    e.colorCount = 0;
+    e.depthView = VK_NULL_HANDLE;
+    e.width = 0;
+    e.height = 0;
+    for (int i = 0; i < 8; ++i) e.colorViews[i] = VK_NULL_HANDLE;
+    for (int i = 0; i < 8; ++i) e.fboColorTexIds[i] = 0;
+    e.fboColorTexCount = 0;
+    e.fboDepthTexId = 0;
+    // Clear commandBufferRecording so the next ensure_command_buffer_recording()
+    // lazily resets+begins the current slot's buffer rather than trusting a
+    // stale recording flag left over from the pre-deviceLost frame.
+    Backend* b = backend();
+    if (b) b->commandBufferRecording = false;
+}
+
 } // namespace vk
 } // namespace mithril
 
@@ -1504,8 +2111,21 @@ void backend_set_clear_stencil(int s)  { mithril::vk::set_clear_stencil(s); }
 void backend_set_load_clear(void)      { mithril::vk::set_load_clear(true); }
 void backend_set_load_load(void)       { mithril::vk::set_load_clear(false); }
 
+void backend_set_invalidate_attachments(uint32_t color_mask, bool depth, bool stencil) {
+    mithril::vk::set_invalidate_attachments(color_mask, depth, stencil);
+}
+
 void backend_clear_attachments(GLbitfield mask, int x, int y, int w, int h) {
     mithril::vk::clear_attachments(mask, x, y, w, h);
+}
+
+void backend_clear_buffer_indexed(GLenum buffer, GLint drawbuffer,
+                                  const float color[4], float depth,
+                                  GLuint stencil) {
+    static const float kZero[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    mithril::vk::clear_buffer_indexed((uint32_t)buffer, drawbuffer,
+                                      color ? color : kZero, depth,
+                                      (uint32_t)stencil);
 }
 
 void backend_begin_render_pass(VkImageView* color_views, int color_count,
@@ -1548,26 +2168,237 @@ void backend_set_fbo_attachment_tex_ids(GLuint* color_tex_ids, int color_count,
 }
 
 void backend_end_render_pass(void) { mithril::vk::end_render_pass(); }
-void backend_commit(void)          { mithril::vk::commit_frame(); }
+int backend_render_pass_active(void) { return mithril::vk::render_pass_active()?1:0; }
 
+int backend_yflip_enabled(void) {
+    // Report every transition, with the reason. The orientation has been wrong
+    // across several attempts and the two candidate causes are
+    // indistinguishable from the outside: either the flip decision is wrong, or
+    // the override never reaches this process at all (a launcher that takes
+    // JVM -D properties will not set an environment variable). Seeing
+    // "source=env" vs "source=default" in the log settles it in one run.
+    static int last = -1;
+    const char* source = "default(no swapchain yet)";
+    int v = 1;
+
+    if (const char* e = std::getenv("MITHRIL_YFLIP")) {
+        v = (e[0] == '0') ? 0 : 1;
+        source = "env";
+    } else {
+        // MobileGL parity: orientation comes from the SURFACE TRANSFORM, not
+        // from the platform. A quarter turn (ROTATE_90/270) already reorients
+        // the image on presentation, so flipping gl_Position.y on top of it
+        // mirrors the frame. Identity and 180 keep the flip.
+        // Ref: MobileGL IsQuarterTurnPreTransform / GetShaderTransformFlags.
+        //
+        // Deliberately not cached until a swapchain exists: caching on the
+        // first call locked in IDENTITY - and therefore "flip" - for the whole
+        // session, because the first call comes from the shader-compile path
+        // and runs before any surface exists.
+        static int cached = 1;
+        static bool have_transform = false;
+        if (mithril::vk::Swapchain* sc = mithril::vk::active_swapchain()) {
+            const VkSurfaceTransformFlagBitsKHR t = sc->preTransform;
+            cached = (t == VK_SURFACE_TRANSFORM_ROTATE_90_BIT_KHR ||
+                      t == VK_SURFACE_TRANSFORM_ROTATE_270_BIT_KHR) ? 0 : 1;
+            have_transform = true;
+        }
+        // No platform special case. MoltenVK's flip is now disabled before any
+        // VkInstance can exist (apply_moltenvk_config in Device.cpp), so
+        // Mithril is the only flipper on every platform and the surface
+        // transform is the only thing that can suppress the flip.
+        //
+        // An iOS-only branch used to force "do not flip" here, on the theory
+        // that MoltenVK was still flipping because the host created an instance
+        // first. On device that produced zero flips - menu text and logo upside
+        // down, the reported symptom. Removing it makes iOS follow the same
+        // path as macOS, which is known-correct in CI.
+        v = cached;
+        source = have_transform ? "surface-transform" : "default(no swapchain yet)";
+    }
+
+    if (v != last) {
+        last = v;
+        MITHRIL_LOG_WARN("orient", "yflip=%d source=%s", v, source);
+    }
+    return v;
+}
+
+// These three were swallowed by an edit that located the end of the old
+// backend_yflip_enabled() body with a brace search and ran past the closing
+// brace. All are declared in Backend.h and called from other translation
+// units, so losing them broke the link.
+void backend_commit(void) { mithril::vk::commit_frame(); }
+void backend_mark_commands(void) { mithril::vk::encoder().hasCommands = true; }
 void backend_set_active_swapchain(void* swapchain_state) {
     mithril::vk::set_active_swapchain((mithril::vk::Swapchain*)swapchain_state);
+}
+
+VkImageLayout backend_active_swapchain_color_layout(void) {
+    mithril::vk::Swapchain* sc = mithril::vk::active_swapchain();
+    return sc ? sc->currentColorLayout : VK_IMAGE_LAYOUT_UNDEFINED;
+}
+
+void backend_set_active_swapchain_color_layout(VkImageLayout layout) {
+    mithril::vk::Swapchain* sc = mithril::vk::active_swapchain();
+    if (sc) sc->currentColorLayout = layout;
 }
 
 void backend_drain_and_detach_swapchain(void) {
     mithril::vk::drain_and_detach_swapchain();
 }
 
+/*
+ * Bind a graphics pipeline and track it (root cause AI).
+ *
+ * The tracking handle is what lets backend_draw_* refuse to record a draw
+ * with no pipeline bound — recording one is undefined behaviour and makes
+ * MoltenVK dereference a null MVKRenderPass (SIGSEGV in
+ * MVKRenderSubpass::populateMTLRenderPassDescriptor). A null `pipeline` here
+ * means creation failed upstream, so nothing is bound and the handle is
+ * cleared rather than left pointing at a stale pipeline from an earlier draw.
+ */
 void backend_bind_pipeline(VkPipeline pipeline) {
     mithril::vk::Backend* b = mithril::vk::backend();
-    if (b->commandBuffer && pipeline) {
+    // FIX (VK_NOT_READY storm): only record vkCmdBindPipeline when the command
+    // buffer is actually recording. During deviceLost or before the first
+    // begin_render_pass, b->commandBuffer may be non-null but not in the
+    // RECORDING state — recording into it spams VK_NOT_READY.
+    if (b->commandBuffer && b->commandBufferRecording && pipeline) {
         vkCmdBindPipeline(b->commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+        mithril::vk::encoder().boundPipeline = pipeline;
+    } else {
+        mithril::vk::encoder().boundPipeline = VK_NULL_HANDLE;
     }
+}
+
+/*
+ * Push a vertex-stage push constant (root cause: gl_VertexID baseVertex
+ * semantics). Every vertex shader carries a `_MithrilBaseVertex` block at
+ * offset 0 / size 4 (Shader.cpp:inject_vertex_id_fixup); Drawing.cpp writes
+ * g_state->currentBaseVertex here on every draw so the shader's gl_VertexID
+ * (== gl_VertexIndex + _mbv._mithrilBaseVertex) matches desktop GL.
+ *
+ * Resolves the layout from the per-program table; a program with no descriptor
+ * bindings falls back to the process-wide empty layout (both declare the same
+ * VERTEX-stage range). vkCmdPushConstants is a state command and is valid both
+ * inside and outside a render-pass instance.
+ */
+void backend_push_constants(GLuint program, uint32_t offset, uint32_t size,
+                            const void* data) {
+    mithril::vk::Backend* b = mithril::vk::backend();
+    if (!b || !b->commandBuffer || !b->commandBufferRecording) return;
+    if (!data) return;
+
+    VkPipelineLayout layout = VK_NULL_HANDLE;
+    auto& tbl = mithril::vk::program_table();
+    auto it = tbl.find(program);
+    if (it != tbl.end() && it->second.pipelineLayout != VK_NULL_HANDLE) {
+        layout = it->second.pipelineLayout;
+    } else {
+        layout = mithril::vk::backend_default_pipeline_layout();
+    }
+    if (layout == VK_NULL_HANDLE) return;
+
+    vkCmdPushConstants(b->commandBuffer, layout, VK_SHADER_STAGE_VERTEX_BIT,
+                       offset, size, data);
+}
+
+/* ---- Compute dispatch (glDispatchCompute) ----
+ *
+ * Mirrors MobileGL VulkanRenderer::DispatchCompute (VulkanRenderer.cpp:4492).
+ * The render pass MUST be ended first: vkCmdDispatch is not a valid command
+ * inside a render-pass instance, and under dynamic rendering there is no
+ * subpass to hide in. Ending the pass here (rather than asking the GL
+ * frontend to) keeps every caller — glDispatchCompute and
+ * glDispatchComputeIndirect — from having to remember.
+ */
+static bool prepare_compute_dispatch() {
+    mithril::vk::Backend* b = mithril::vk::backend();
+    if (!b->initialized || b->deviceLost) return false;
+    if (!mithril::g_state) return false;
+    const GLuint program = mithril::g_state->currentProgram;
+    if (program == 0) return false;
+
+    if (mithril::vk::render_pass_active()) mithril::vk::end_render_pass();
+    if (!mithril::vk::ensure_command_buffer_recording()) return false;
+
+    VkPipeline pipe = backend_get_or_create_compute_pipeline(program);
+    if (pipe == VK_NULL_HANDLE) return false;
+    vkCmdBindPipeline(b->commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipe);
+    mithril::vk::bind_program_descriptors(program, VK_PIPELINE_BIND_POINT_COMPUTE);
+    return true;
+}
+
+void backend_dispatch_compute(uint32_t groups_x, uint32_t groups_y, uint32_t groups_z) {
+    if (groups_x == 0 || groups_y == 0 || groups_z == 0) return;  // GL no-op
+    if (!prepare_compute_dispatch()) return;
+    vkCmdDispatch(mithril::vk::backend()->commandBuffer, groups_x, groups_y, groups_z);
+}
+
+void backend_dispatch_compute_indirect(VkBuffer buffer, VkDeviceSize offset) {
+    if (buffer == VK_NULL_HANDLE) return;
+    if (!prepare_compute_dispatch()) return;
+    vkCmdDispatchIndirect(mithril::vk::backend()->commandBuffer, buffer, offset);
+}
+
+/* ---- glMemoryBarrier ----
+ *
+ * GL names the *kinds* of access that must be ordered; Vulkan wants explicit
+ * src/dst access masks and pipeline stages. Rather than translate each bit
+ * (and risk under-synchronising a case we did not enumerate), widen to a
+ * single ALL_COMMANDS -> ALL_COMMANDS VkMemoryBarrier with a superset of
+ * access flags, exactly as MobileGL does in BuildMemoryBarrierForGlBarriers /
+ * MemoryBarrier (VulkanRenderer.cpp:4585-4620). glMemoryBarrier is called a
+ * handful of times per frame at most, so the conservatism is free.
+ */
+void backend_memory_barrier(GLbitfield barriers) {
+    mithril::vk::Backend* b = mithril::vk::backend();
+    if (!b->initialized || b->deviceLost) return;
+
+    if (mithril::vk::render_pass_active()) mithril::vk::end_render_pass();
+    if (!mithril::vk::ensure_command_buffer_recording()) return;
+
+    VkMemoryBarrier mb{};
+    mb.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+    mb.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT |
+                       VK_ACCESS_SHADER_READ_BIT |
+                       VK_ACCESS_TRANSFER_WRITE_BIT |
+                       VK_ACCESS_TRANSFER_READ_BIT |
+                       VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
+                       VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT |
+                       VK_ACCESS_HOST_WRITE_BIT |
+                       VK_ACCESS_MEMORY_WRITE_BIT;
+    mb.dstAccessMask = VK_ACCESS_SHADER_READ_BIT |
+                       VK_ACCESS_SHADER_WRITE_BIT |
+                       VK_ACCESS_TRANSFER_READ_BIT |
+                       VK_ACCESS_TRANSFER_WRITE_BIT |
+                       VK_ACCESS_COLOR_ATTACHMENT_READ_BIT |
+                       VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
+                       VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
+                       VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT |
+                       VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT |
+                       VK_ACCESS_INDEX_READ_BIT |
+                       VK_ACCESS_UNIFORM_READ_BIT |
+                       VK_ACCESS_MEMORY_READ_BIT |
+                       VK_ACCESS_MEMORY_WRITE_BIT;
+    // GL_COMMAND_BARRIER_BIT orders writes against a subsequent
+    // glDraw*Indirect / glDispatchComputeIndirect fetch, which Vulkan models
+    // as its own access flag rather than folding into MEMORY_READ.
+    if (barriers & MG_GL_COMMAND_BARRIER_BIT) {
+        mb.dstAccessMask |= VK_ACCESS_INDIRECT_COMMAND_READ_BIT;
+    }
+
+    vkCmdPipelineBarrier(b->commandBuffer,
+                         VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+                         VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+                         0, 1, &mb, 0, nullptr, 0, nullptr);
 }
 
 void backend_set_viewport(int x, int y, int w, int h, double znear, double zfar) {
     mithril::vk::Backend* b = mithril::vk::backend();
-    if (!b->commandBuffer) return;
+    // FIX (VK_NOT_READY storm): guard against non-recording command buffer.
+    if (!b->commandBuffer || !b->commandBufferRecording) return;
     // FIX (root cause Z): GL viewport Y is bottom-origin (Y grows upward
     // from the bottom-left of the framebuffer), but Vulkan viewport Y is
     // top-origin (Y grows downward from the top-left). The previous code
@@ -1611,7 +2442,8 @@ void backend_set_viewport(int x, int y, int w, int h, double znear, double zfar)
 
 void backend_set_scissor(int x, int y, int w, int h) {
     mithril::vk::Backend* b = mithril::vk::backend();
-    if (!b->commandBuffer) return;
+    // FIX (VK_NOT_READY storm): guard against non-recording command buffer.
+    if (!b->commandBuffer || !b->commandBufferRecording) return;
     // FIX (root cause Z): same Y-origin conversion as backend_set_viewport.
     // GL scissor Y is bottom-origin; Vulkan scissor Y is top-origin. Without
     // this conversion, a non-zero-Y scissor (e.g. GUI clipping) clips the
@@ -1633,7 +2465,8 @@ void backend_set_scissor(int x, int y, int w, int h) {
 
 void backend_set_vertex_buffer(int slot, VkBuffer buffer, VkDeviceSize offset) {
     mithril::vk::Backend* b = mithril::vk::backend();
-    if (!b->commandBuffer || !buffer) return;
+    // FIX (VK_NOT_READY storm): guard against non-recording command buffer.
+    if (!b->commandBuffer || !b->commandBufferRecording || !buffer) return;
     VkDeviceSize offsets[1] = { offset };
     vkCmdBindVertexBuffers(b->commandBuffer, (uint32_t)slot, 1, &buffer, offsets);
 }
@@ -1662,38 +2495,54 @@ void backend_set_blend_color(float r, float g, float b, float a) {
     // NOTE: parameter `b` is the blue blend constant (float); the backend ptr
     // is renamed to avoid shadowing it.
     mithril::vk::Backend* bk = mithril::vk::backend();
-    if (!bk->commandBuffer) return;
+    // FIX (VK_NOT_READY storm): guard against non-recording command buffer.
+    if (!bk->commandBuffer || !bk->commandBufferRecording) return;
     float bc[4] = { r, g, b, a };
     vkCmdSetBlendConstants(bk->commandBuffer, bc);
 }
 
 void backend_set_depth_bias(float slope, float clamp) {
     mithril::vk::Backend* b = mithril::vk::backend();
-    if (!b->commandBuffer) return;
+    // FIX (VK_NOT_READY storm): guard against non-recording command buffer.
+    if (!b->commandBuffer || !b->commandBufferRecording) return;
     vkCmdSetDepthBias(b->commandBuffer, slope, clamp, 0.0f);
 }
 
 void backend_set_cull_mode(int mode) {
     mithril::vk::Backend* b = mithril::vk::backend();
-    if (!b->commandBuffer) return;
+    // FIX (VK_NOT_READY storm): guard against non-recording command buffer.
+    if (!b->commandBuffer || !b->commandBufferRecording) return;
     VkCullModeFlags cull = VK_CULL_MODE_NONE;
     if (mode == 1) cull = VK_CULL_MODE_FRONT_BIT;
     else if (mode == 2) cull = VK_CULL_MODE_BACK_BIT;
     else if (mode == 3) cull = VK_CULL_MODE_FRONT_AND_BACK;
-    vkCmdSetCullMode(b->commandBuffer, cull);
+    // Resolved, not linked (see Device.h): absent on Android's libvulkan.so.
+    if (!b->extendedDynamicStateSupported || !b->cmdSetCullMode) return;
+    reinterpret_cast<PFN_vkCmdSetCullMode>(b->cmdSetCullMode)(b->commandBuffer, cull);
 }
 
 void backend_set_front_face(int ccw) {
     mithril::vk::Backend* b = mithril::vk::backend();
-    if (!b->commandBuffer) return;
-    vkCmdSetFrontFace(b->commandBuffer, ccw ? VK_FRONT_FACE_COUNTER_CLOCKWISE : VK_FRONT_FACE_CLOCKWISE);
+    // FIX (VK_NOT_READY storm): guard against non-recording command buffer.
+    if (!b->commandBuffer || !b->commandBufferRecording) return;
+    if (!b->extendedDynamicStateSupported || !b->cmdSetFrontFace) return;
+    reinterpret_cast<PFN_vkCmdSetFrontFace>(b->cmdSetFrontFace)(
+        b->commandBuffer, ccw ? VK_FRONT_FACE_COUNTER_CLOCKWISE : VK_FRONT_FACE_CLOCKWISE);
 }
 
 void backend_set_depth_test(int enabled, int write_mask, int compare_func) {
     mithril::vk::Backend* b = mithril::vk::backend();
-    if (!b->commandBuffer) return;
-    vkCmdSetDepthTestEnable(b->commandBuffer, enabled ? VK_TRUE : VK_FALSE);
-    vkCmdSetDepthWriteEnable(b->commandBuffer, write_mask ? VK_TRUE : VK_FALSE);
+    // FIX (VK_NOT_READY storm): guard against non-recording command buffer.
+    if (!b->commandBuffer || !b->commandBufferRecording) return;
+    // Resolved, not linked (see Device.h). Without extended dynamic state
+    // these belong to the static pipeline (Drawing.cpp folds them into the
+    // pipeline key), so silently skipping is the correct fallback here.
+    if (!b->extendedDynamicStateSupported || !b->cmdSetDepthTestEnable ||
+        !b->cmdSetDepthWriteEnable || !b->cmdSetDepthCompareOp) return;
+    reinterpret_cast<PFN_vkCmdSetDepthTestEnable>(b->cmdSetDepthTestEnable)(
+        b->commandBuffer, enabled ? VK_TRUE : VK_FALSE);
+    reinterpret_cast<PFN_vkCmdSetDepthWriteEnable>(b->cmdSetDepthWriteEnable)(
+        b->commandBuffer, write_mask ? VK_TRUE : VK_FALSE);
     VkCompareOp op = VK_COMPARE_OP_LESS;
     switch (compare_func) {
         case 0x200: op = VK_COMPARE_OP_NEVER; break;    // GL_NEVER
@@ -1706,7 +2555,8 @@ void backend_set_depth_test(int enabled, int write_mask, int compare_func) {
         case 0x207: op = VK_COMPARE_OP_ALWAYS; break;
         default: op = VK_COMPARE_OP_LESS; break;
     }
-    vkCmdSetDepthCompareOp(b->commandBuffer, op);
+    reinterpret_cast<PFN_vkCmdSetDepthCompareOp>(b->cmdSetDepthCompareOp)(
+        b->commandBuffer, op);
 }
 
 void backend_set_color_write_mask(int r, int g, int b, int a) {
@@ -1727,10 +2577,17 @@ void backend_set_stencil_state(int enabled, int func, int ref, int mask,
     // Stencil dynamic state deferred (bring-up).
 }
 
+void backend_queue_wait_idle(void) {
+    mithril::vk::Backend* b = mithril::vk::backend();
+    if (b && b->graphicsQueue) vkQueueWaitIdle(b->graphicsQueue);
+}
 void backend_draw_arrays(int primitive, int first, int count) {
+    if (std::getenv("MITHRIL_DRAWPATH")) { static uint64_t n_DA=0; ++n_DA; if((n_DA%200)==1) fprintf(stderr,"[DP:DA] #%llu (arrays)\n",(unsigned long long)n_DA); }
     (void)primitive;
     mithril::vk::Backend* b = mithril::vk::backend();
     if (!b->commandBuffer) return;
+    if (!mithril::vk::draw_recording_allowed("backend_draw_arrays")) return;
+    mithril::vk::debug_atlas_trace("arrays",count);
     // Root cause AG (CRITICAL): pass firstInstance from g_state. glDrawArrays
     // itself has no baseInstance, but glDrawArraysInstancedBaseInstance /
     // glDrawArraysInstancedBaseVertexBaseInstance (rare) set
@@ -1742,14 +2599,20 @@ void backend_draw_arrays(int primitive, int first, int count) {
     // Mirrors MobileGL drawParams.firstInstance.
     uint32_t firstInstance = 0;
     if (mithril::g_state) firstInstance = mithril::g_state->currentBaseInstance;
+    if (getenv("MITHRIL_DRAWKIND") && mithril::g_state && mithril::g_state->currentDrawFBO==3){
+      static int an=0; if(an<16){++an; fprintf(stderr,"[DK] fbo3 ARRAYS #%d count=%d first=%d baseV=%d baseI=%u\n",an,count,first,(int)mithril::g_state->currentBaseVertex,firstInstance);}
+    }
     vkCmdDraw(b->commandBuffer, (uint32_t)count, 1, (uint32_t)first, firstInstance);
 }
 
 void backend_draw_indexed(int primitive, int count, int index_type,
                           VkBuffer index_buffer, VkDeviceSize index_offset) {
+    if (std::getenv("MITHRIL_DRAWPATH")) { static uint64_t n_DI=0; ++n_DI; if((n_DI%200)==1) fprintf(stderr,"[DP:DI] #%llu (indexed)\n",(unsigned long long)n_DI); }
     (void)primitive;
     mithril::vk::Backend* b = mithril::vk::backend();
     if (!b->commandBuffer || !index_buffer) return;
+    if (!mithril::vk::draw_recording_allowed("backend_draw_indexed")) return;
+    mithril::vk::debug_atlas_trace("indexed",count);
     // FIX (root cause AE, CRITICAL): GL_UNSIGNED_BYTE index support.
     // Drawing.cpp maps GL_UNSIGNED_BYTE → 2 (index_type_to_int), but the
     // previous code only handled 0 (UINT16) and 1 (UINT32), treating
@@ -1779,20 +2642,28 @@ void backend_draw_indexed(int primitive, int count, int index_type,
         vertexOffset = mithril::g_state->currentBaseVertex;
         firstInstance = mithril::g_state->currentBaseInstance;
     }
+    if (getenv("MITHRIL_DRAWKIND") && mithril::g_state && mithril::g_state->currentDrawFBO==3){
+      static int in2=0; if(in2<16){++in2; fprintf(stderr,"[DK] fbo3 INDEXED #%d count=%d vOff=%d baseI=%u\n",in2,count,(int)vertexOffset,firstInstance);}
+    }
     vkCmdDrawIndexed(b->commandBuffer, (uint32_t)count, 1, 0,
                      (int32_t)vertexOffset, firstInstance);
 }
 
 void backend_draw_arrays_instanced(int primitive, int first, int count, int primcount) {
+    if (std::getenv("MITHRIL_DRAWPATH")) { static uint64_t n_DAI=0; ++n_DAI; if((n_DAI%200)==1) fprintf(stderr,"[DP:DAI] #%llu (arrays-inst)\n",(unsigned long long)n_DAI); }
     (void)primitive;
     mithril::vk::Backend* b = mithril::vk::backend();
     if (!b->commandBuffer) return;
+    if (!mithril::vk::draw_recording_allowed("backend_draw_arrays_instanced")) return;
     // Root cause AG (CRITICAL): pass firstInstance from g_state (see
     // backend_draw_arrays for rationale). glDrawArraysInstancedBaseInstance
     // sets g_state->currentBaseInstance before falling through to the
     // instanced draw path.
     uint32_t firstInstance = 0;
     if (mithril::g_state) firstInstance = mithril::g_state->currentBaseInstance;
+    if (getenv("MITHRIL_DRAWKIND") && mithril::g_state && mithril::g_state->currentDrawFBO==3){
+      static int an=0; if(an<16){++an; fprintf(stderr,"[DK] fbo3 ARRAYS #%d count=%d first=%d baseV=%d baseI=%u\n",an,count,first,(int)mithril::g_state->currentBaseVertex,firstInstance);}
+    }
     vkCmdDraw(b->commandBuffer, (uint32_t)count, (uint32_t)primcount,
               (uint32_t)first, firstInstance);
 }
@@ -1800,9 +2671,11 @@ void backend_draw_arrays_instanced(int primitive, int first, int count, int prim
 void backend_draw_indexed_instanced(int primitive, int count, int index_type,
                                     VkBuffer index_buffer, VkDeviceSize index_offset,
                                     int primcount) {
+    if (std::getenv("MITHRIL_DRAWPATH")) { static uint64_t n_DII=0; ++n_DII; if((n_DII%200)==1) fprintf(stderr,"[DP:DII] #%llu (indexed-inst)\n",(unsigned long long)n_DII); }
     (void)primitive;
     mithril::vk::Backend* b = mithril::vk::backend();
     if (!b->commandBuffer || !index_buffer) return;
+    if (!mithril::vk::draw_recording_allowed("backend_draw_indexed_instanced")) return;
     // FIX (root cause AE, CRITICAL): GL_UNSIGNED_BYTE index support — see
     // backend_draw_indexed for the full rationale.
     VkIndexType t;
@@ -1821,8 +2694,434 @@ void backend_draw_indexed_instanced(int primitive, int count, int index_type,
         vertexOffset = mithril::g_state->currentBaseVertex;
         firstInstance = mithril::g_state->currentBaseInstance;
     }
+    if (getenv("MITHRIL_DRAWKIND") && mithril::g_state && mithril::g_state->currentDrawFBO==3){
+      static int in2=0; if(in2<16){++in2; fprintf(stderr,"[DK] fbo3 INDEXED #%d count=%d vOff=%d baseI=%u\n",in2,count,(int)vertexOffset,firstInstance);}
+    }
     vkCmdDrawIndexed(b->commandBuffer, (uint32_t)count, (uint32_t)primcount, 0,
                      (int32_t)vertexOffset, firstInstance);
 }
+
+/* ---- Indirect draws (GL 4.0 ARB_draw_indirect) ----
+ *
+ * The draw parameters live in a GPU buffer instead of the call arguments, so
+ * the GPU can generate its own work. Metal has this natively
+ * (drawPrimitives:indirectBuffer:) and MoltenVK maps vkCmdDrawIndirect onto
+ * it, which makes this one of the few GL 4.0 features that costs almost
+ * nothing here.
+ *
+ * The GL and Vulkan parameter blocks are laid out identically —
+ * VkDrawIndirectCommand matches GL's {count, primCount, first, baseInstance}
+ * and VkDrawIndexedIndirectCommand matches {count, primCount, firstIndex,
+ * baseVertex, baseInstance} — so the buffer contents need no translation.
+ *
+ * multiDrawIndirect with drawCount > 1 requires the multiDrawIndirect
+ * feature; the loop fallback keeps working without it.
+ */
+void backend_draw_indirect(int primitive, VkBuffer indirect_buffer,
+                           VkDeviceSize indirect_offset,
+                           int draw_count, int stride) {
+    (void)primitive;
+    mithril::vk::Backend* b = mithril::vk::backend();
+    if (!b->commandBuffer || !indirect_buffer || draw_count <= 0) return;
+    if (!mithril::vk::draw_recording_allowed("backend_draw_indirect")) return;
+    const uint32_t effStride = stride > 0 ? (uint32_t)stride : 16u;  // sizeof(VkDrawIndirectCommand)
+    if (draw_count == 1 || b->multiDrawIndirectSupported) {
+        vkCmdDrawIndirect(b->commandBuffer, indirect_buffer, indirect_offset,
+                          (uint32_t)draw_count, effStride);
+        return;
+    }
+    for (int i = 0; i < draw_count; ++i) {
+        vkCmdDrawIndirect(b->commandBuffer, indirect_buffer,
+                          indirect_offset + (VkDeviceSize)i * effStride, 1, effStride);
+    }
+}
+
+void backend_draw_indexed_indirect(int primitive, int index_type,
+                                   VkBuffer index_buffer, VkDeviceSize index_offset,
+                                   VkBuffer indirect_buffer,
+                                   VkDeviceSize indirect_offset,
+                                   int draw_count, int stride) {
+    (void)primitive;
+    mithril::vk::Backend* b = mithril::vk::backend();
+    if (!b->commandBuffer || !index_buffer || !indirect_buffer || draw_count <= 0) return;
+    if (!mithril::vk::draw_recording_allowed("backend_draw_indexed_indirect")) return;
+    VkIndexType t;
+    if (index_type == 1)      t = VK_INDEX_TYPE_UINT32;
+    else if (index_type == 2) t = VK_INDEX_TYPE_UINT8_EXT;
+    else                      t = VK_INDEX_TYPE_UINT16;
+    vkCmdBindIndexBuffer(b->commandBuffer, index_buffer, index_offset, t);
+    const uint32_t effStride = stride > 0 ? (uint32_t)stride : 20u;  // sizeof(VkDrawIndexedIndirectCommand)
+    if (draw_count == 1 || b->multiDrawIndirectSupported) {
+        vkCmdDrawIndexedIndirect(b->commandBuffer, indirect_buffer, indirect_offset,
+                                 (uint32_t)draw_count, effStride);
+        return;
+    }
+    for (int i = 0; i < draw_count; ++i) {
+        vkCmdDrawIndexedIndirect(b->commandBuffer, indirect_buffer,
+                                 indirect_offset + (VkDeviceSize)i * effStride, 1, effStride);
+    }
+}
+
+/* ---- GL 4.6 ARB_indirect_parameters (_Count variants) ----
+ *
+ * vkCmdDrawIndirectCount / vkCmdDrawIndexedIndirectCount read the draw COUNT
+ * from `count_buffer` at `count_offset` on the GPU, clamp it to maxDrawcount,
+ * and issue that many draws — no CPU readback. This is exactly what
+ * glMultiDrawArraysIndirectCount / glMultiDrawElementsIndirectCount need.
+ *
+ * Requires the Vulkan 1.2 `drawIndirectCount` core feature; the GL frontend
+ * checks b->drawIndirectCountSupported and falls back to a CPU readback when
+ * the device (or MoltenVK) does not report it.
+ */
+void backend_draw_indirect_count(int primitive, VkBuffer indirect_buffer,
+                                 VkDeviceSize indirect_offset,
+                                 VkBuffer count_buffer, VkDeviceSize count_offset,
+                                 int max_drawcount, int stride) {
+    (void)primitive;
+    mithril::vk::Backend* b = mithril::vk::backend();
+    if (!b->commandBuffer || !indirect_buffer || !count_buffer || max_drawcount <= 0)
+        return;
+    if (!b->drawIndirectCountSupported) {
+        // GL 4.6 ARB_indirect_parameters 无法用 vkCmdDrawIndirectCount。静默跳过
+        // 会误导排查；记录一次。MoltenVK 1.2.x 正常路径不会到这里。
+        static int loggedOnce = 0;
+        if (loggedOnce++ < 1) {
+            MITHRIL_LOG_WARN("vk", "backend_draw_indirect_count: device lacks "
+                              "drawIndirectCount (GL 4.6 indirect_parameters "
+                              "unavailable) — draw skipped");
+        }
+        return;
+    }
+    if (!mithril::vk::draw_recording_allowed("backend_draw_indirect_count")) return;
+    const uint32_t effStride = stride > 0 ? (uint32_t)stride : 16u;  // sizeof(VkDrawIndirectCommand)
+    if (!b->cmdDrawIndirectCount) return;
+    reinterpret_cast<PFN_vkCmdDrawIndirectCount>(b->cmdDrawIndirectCount)(
+        b->commandBuffer, indirect_buffer, indirect_offset,
+        count_buffer, count_offset, (uint32_t)max_drawcount, effStride);
+}
+
+void backend_draw_indexed_indirect_count(int primitive, int index_type,
+                                         VkBuffer index_buffer, VkDeviceSize index_offset,
+                                         VkBuffer indirect_buffer, VkDeviceSize indirect_offset,
+                                         VkBuffer count_buffer, VkDeviceSize count_offset,
+                                         int max_drawcount, int stride) {
+    (void)primitive;
+    mithril::vk::Backend* b = mithril::vk::backend();
+    if (!b->commandBuffer || !index_buffer || !indirect_buffer || !count_buffer ||
+        max_drawcount <= 0)
+        return;
+    if (!b->drawIndirectCountSupported) {
+        static int loggedOnce = 0;
+        if (loggedOnce++ < 1) {
+            MITHRIL_LOG_WARN("vk", "backend_draw_indexed_indirect_count: device lacks "
+                              "drawIndirectCount (GL 4.6 indirect_parameters "
+                              "unavailable) — draw skipped");
+        }
+        return;
+    }
+    if (!mithril::vk::draw_recording_allowed("backend_draw_indexed_indirect_count")) return;
+    VkIndexType t;
+    if (index_type == 1)      t = VK_INDEX_TYPE_UINT32;
+    else if (index_type == 2) t = VK_INDEX_TYPE_UINT8_EXT;
+    else                      t = VK_INDEX_TYPE_UINT16;
+    vkCmdBindIndexBuffer(b->commandBuffer, index_buffer, index_offset, t);
+    const uint32_t effStride = stride > 0 ? (uint32_t)stride : 20u;  // sizeof(VkDrawIndexedIndirectCommand)
+    if (!b->cmdDrawIndexedIndirectCount) return;
+    reinterpret_cast<PFN_vkCmdDrawIndexedIndirectCount>(b->cmdDrawIndexedIndirectCount)(
+        b->commandBuffer, indirect_buffer, indirect_offset,
+        count_buffer, count_offset, (uint32_t)max_drawcount, effStride);
+}
+
+
+namespace mithril {
+namespace vk {
+
+/* =========================================================================
+ * Real GPU queries (VkQueryPool).
+ *
+ * Previously every query returned a canned "1 sample passed". That is the
+ * safe answer for Iris - returning 0 makes it cull the whole scene to black -
+ * but it also means occlusion culling never culls anything, so the GPU draws
+ * every section the CPU submitted. This wires glBeginQuery / glEndQuery /
+ * glQueryCounter and the getters to a real VkQueryPool so results reflect
+ * what the GPU actually did.
+ *
+ * Two Vulkan constraints shape it:
+ *
+ *  - vkCmdResetQueryPool must be called OUTSIDE a render pass, while
+ *    vkCmdBeginQuery/EndQuery are legal inside one. GL has no such split:
+ *    glBeginQuery/glEndQuery can straddle arbitrary drawing. A newly created
+ *    pool's slots are undefined until reset, so a reset that cannot be issued
+ *    right now is queued and flushed at the next opportunity outside a pass.
+ *    Until then the query is simply not armed, and the getter falls back to
+ *    the conservative "visible" answer - never a stale or invented number.
+ *
+ *  - Reading a result needs the commands submitted. glGetQueryObject* is
+ *    defined to block until the result is available, but Mithril only submits
+ *    at present time. The read therefore tries non-blocking first and only
+ *    drains the queue when the caller asks for the value itself
+ *    (GL_QUERY_RESULT). GL_QUERY_RESULT_AVAILABLE never blocks.
+ *
+ * MITHRIL_REAL_QUERIES=0 restores the previous conservative behaviour without
+ * a rebuild, in case a device's MoltenVK build mishandles the pool.
+ * ========================================================================= */
+#ifndef GL_SAMPLES_PASSED
+#define GL_SAMPLES_PASSED         0x8914
+#endif
+#ifndef GL_ANY_SAMPLES_PASSED
+#define GL_ANY_SAMPLES_PASSED     0x8C2F
+#endif
+#ifndef GL_PRIMITIVES_GENERATED
+#define GL_PRIMITIVES_GENERATED   0x8C87
+#endif
+#ifndef GL_TIME_ELAPSED
+#define GL_TIME_ELAPSED           0x88BF
+#endif
+#ifndef GL_TIMESTAMP
+#define GL_TIMESTAMP              0x8E28
+#endif
+
+namespace {
+
+struct QuerySlot {
+    VkQueryPool pool = VK_NULL_HANDLE;
+    VkQueryType type = VK_QUERY_TYPE_OCCLUSION;
+    uint32_t    count = 1;
+    bool        armed = false;      // reset issued; safe to read
+    bool        began = false;
+    bool        needsReset = true;  // fresh pool: slots are undefined
+};
+
+std::unordered_map<GLuint, QuerySlot>& query_slots() {
+    static std::unordered_map<GLuint, QuerySlot> m;
+    return m;
+}
+
+std::vector<VkQueryPool>& pending_resets() {
+    static std::vector<VkQueryPool> v;
+    return v;
+}
+
+bool real_queries_enabled() {
+    static int v = -1;
+    if (v < 0) {
+        v = 1;
+        if (const char* e = std::getenv("MITHRIL_REAL_QUERIES"))
+            if (e[0] == '0') v = 0;
+    }
+    return v != 0;
+}
+
+bool map_query_type(GLenum target, VkQueryType& out, uint32_t& count) {
+    count = 1;
+    switch (target) {
+    case GL_SAMPLES_PASSED:
+    case GL_ANY_SAMPLES_PASSED:
+        out = VK_QUERY_TYPE_OCCLUSION; return true;
+    case GL_PRIMITIVES_GENERATED:
+        out = VK_QUERY_TYPE_PIPELINE_STATISTICS; return true;
+    case GL_TIME_ELAPSED:
+        out = VK_QUERY_TYPE_TIMESTAMP; count = 2; return true;  // two stamps
+    case GL_TIMESTAMP:
+        out = VK_QUERY_TYPE_TIMESTAMP; return true;
+    default:
+        return false;
+    }
+}
+
+// vkCmdResetQueryPool is illegal inside a render pass; this is the one place
+// that issues it, and it no-ops if a pass is active.
+void reset_now(VkQueryPool pool, uint32_t count) {
+    Backend* b = backend();
+    if (!b->initialized || b->deviceLost) return;
+    if (render_pass_active()) return;
+    if (!ensure_command_buffer_recording()) return;
+    vkCmdResetQueryPool(b->commandBuffer, pool, 0, count);
+}
+
+} // namespace
+
+// Flush resets that could not be issued while a render pass was active. Best
+// effort: anything still inside a pass stays queued for the next call.
+void flush_pending_query_resets(void) {
+    auto& v = pending_resets();
+    if (v.empty() || render_pass_active()) return;
+    for (VkQueryPool pool : v) {
+        uint32_t count = 1;
+        for (const auto& e : query_slots())
+            if (e.second.pool == pool) { count = e.second.count; break; }
+        reset_now(pool, count);
+    }
+    for (auto& e : query_slots())
+        if (std::find(v.begin(), v.end(), e.second.pool) != v.end()) {
+            e.second.needsReset = false;
+            e.second.armed = true;
+        }
+    v.clear();
+}
+
+extern "C" int backend_query_begin(GLuint id, GLenum target) {
+    if (!real_queries_enabled()) return 0;
+    flush_pending_query_resets();
+    Backend* b = backend();
+    if (!b->initialized || b->deviceLost) return 0;
+
+    VkQueryType type; uint32_t count;
+    if (!map_query_type(target, type, count)) return 0;
+
+    QuerySlot& qs = query_slots()[id];
+    if (qs.pool == VK_NULL_HANDLE || qs.type != type || qs.count != count) {
+        if (qs.pool != VK_NULL_HANDLE)
+            vkDestroyQueryPool(b->device, qs.pool, nullptr);
+        VkQueryPoolCreateInfo ci{};
+        ci.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
+        ci.queryType = type;
+        ci.queryCount = count;
+        if (type == VK_QUERY_TYPE_PIPELINE_STATISTICS)
+            ci.pipelineStatistics =
+                VK_QUERY_PIPELINE_STATISTIC_INPUT_ASSEMBLY_VERTICES_BIT;
+        if (vkCreateQueryPool(b->device, &ci, nullptr, &qs.pool) != VK_SUCCESS) {
+            qs.pool = VK_NULL_HANDLE;
+            return 0;
+        }
+        qs.type = type; qs.count = count; qs.needsReset = true; qs.armed = false;
+    }
+
+    if (qs.needsReset) {
+        if (render_pass_active()) {
+            // Cannot reset inside a render pass. Queue it and leave the query
+            // un-armed for now; the getter falls back rather than reporting a
+            // number that was never measured.
+            auto& v = pending_resets();
+            if (std::find(v.begin(), v.end(), qs.pool) == v.end())
+                v.push_back(qs.pool);
+            qs.began = false;
+            return 0;
+        }
+        reset_now(qs.pool, qs.count);
+        qs.needsReset = false;
+        qs.armed = true;
+    }
+
+    if (!ensure_command_buffer_recording()) return 0;
+    if (type == VK_QUERY_TYPE_TIMESTAMP) {
+        vkCmdWriteTimestamp(b->commandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                            qs.pool, 0);
+    } else {
+        vkCmdBeginQuery(b->commandBuffer, qs.pool, 0, 0);
+    }
+    qs.began = true;
+    return 1;
+}
+
+extern "C" int backend_query_end(GLuint id, GLenum target) {
+    (void)target;
+    if (!real_queries_enabled()) return 0;
+    Backend* b = backend();
+    if (!b->initialized || b->deviceLost) return 0;
+    auto it = query_slots().find(id);
+    if (it == query_slots().end() || !it->second.began) return 0;
+    QuerySlot& qs = it->second;
+    if (!ensure_command_buffer_recording()) return 0;
+    if (qs.type == VK_QUERY_TYPE_TIMESTAMP) {
+        // Elapsed time: second stamp in slot 1 (see map_query_type).
+        vkCmdWriteTimestamp(b->commandBuffer, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+                            qs.pool, 1);
+    } else {
+        vkCmdEndQuery(b->commandBuffer, qs.pool, 0);
+    }
+    qs.began = false;
+    qs.needsReset = true;   // must be re-armed before the next use
+    return 1;
+}
+
+extern "C" void backend_query_delete(GLuint id) {
+    Backend* b = backend();
+    auto it = query_slots().find(id);
+    if (it == query_slots().end()) return;
+    if (b->initialized && it->second.pool != VK_NULL_HANDLE)
+        vkDestroyQueryPool(b->device, it->second.pool, nullptr);
+    query_slots().erase(it);
+}
+
+// Non-blocking: is the result ready? Never drains the queue. Reports "ready"
+// when real queries are off, because the caller then uses its own fallback.
+extern "C" int backend_query_result_available(GLuint id) {
+    if (!real_queries_enabled()) return 1;
+    Backend* b = backend();
+    if (!b->initialized || b->deviceLost) return 1;
+    auto it = query_slots().find(id);
+    if (it == query_slots().end() || !it->second.armed) return 0;
+    uint64_t dummy = 0;
+    return vkGetQueryPoolResults(b->device, it->second.pool, 0, 1,
+                                 sizeof(dummy), &dummy, sizeof(uint64_t),
+                                 VK_QUERY_RESULT_64_BIT) == VK_SUCCESS ? 1 : 0;
+}
+
+// Result value. Tries non-blocking first; only drains the queue when the
+// caller asks for the value itself, which is what GL_QUERY_RESULT means.
+// Sets *ok=0 when no trustworthy result exists so the GL layer can fall back
+// to the conservative answer instead of inventing one.
+extern "C" uint64_t backend_query_result_u64(GLuint id, int* ok) {
+    if (ok) *ok = 0;
+    if (!real_queries_enabled()) return 1;
+    Backend* b = backend();
+    if (!b->initialized || b->deviceLost) return 1;
+    auto it = query_slots().find(id);
+    if (it == query_slots().end() || !it->second.armed) return 1;
+
+    QuerySlot& qs = it->second;
+    uint64_t vals[2] = {0, 0};
+    VkResult r = vkGetQueryPoolResults(b->device, qs.pool, 0, qs.count,
+                                       sizeof(vals), vals, sizeof(uint64_t),
+                                       VK_QUERY_RESULT_64_BIT);
+    if (r == VK_NOT_READY) {
+        // GL_QUERY_RESULT blocks, but Mithril only submits at present time -
+        // drain the queue to make the result reachable, then retry.
+        safe_device_wait_idle();
+        r = vkGetQueryPoolResults(b->device, qs.pool, 0, qs.count,
+                                  sizeof(vals), vals, sizeof(uint64_t),
+                                  VK_QUERY_RESULT_64_BIT);
+    }
+    if (r != VK_SUCCESS) return 1;
+    if (ok) *ok = 1;
+    if (qs.type == VK_QUERY_TYPE_TIMESTAMP && qs.count == 2)
+        return vals[1] > vals[0] ? vals[1] - vals[0] : 0;   // elapsed
+    return vals[0];
+}
+
+extern "C" int backend_query_counter(GLuint id) {
+    if (!real_queries_enabled()) return 0;
+    Backend* b = backend();
+    if (!b->initialized || b->deviceLost) return 0;
+    QuerySlot& qs = query_slots()[id];
+    if (qs.pool == VK_NULL_HANDLE || qs.type != VK_QUERY_TYPE_TIMESTAMP) {
+        if (qs.pool != VK_NULL_HANDLE)
+            vkDestroyQueryPool(b->device, qs.pool, nullptr);
+        VkQueryPoolCreateInfo ci{};
+        ci.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
+        ci.queryType = VK_QUERY_TYPE_TIMESTAMP;
+        ci.queryCount = 1;
+        if (vkCreateQueryPool(b->device, &ci, nullptr, &qs.pool) != VK_SUCCESS) {
+            qs.pool = VK_NULL_HANDLE;
+            return 0;
+        }
+        qs.type = VK_QUERY_TYPE_TIMESTAMP; qs.count = 1;
+        qs.needsReset = true; qs.armed = false;
+    }
+    if (qs.needsReset) {
+        if (render_pass_active()) return 0;
+        reset_now(qs.pool, qs.count);
+        qs.needsReset = false; qs.armed = true;
+    }
+    if (!ensure_command_buffer_recording()) return 0;
+    vkCmdWriteTimestamp(b->commandBuffer, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+                        qs.pool, 0);
+    qs.began = false;
+    return 1;
+}
+
+} // namespace vk
+} // namespace mithril
 
 } // extern "C"

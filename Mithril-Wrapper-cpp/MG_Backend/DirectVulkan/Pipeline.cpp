@@ -7,6 +7,7 @@
 #include "Device.h"
 #include "Resources.h"
 #include "DescriptorSet.h"
+#include "RenderPassCompat.h"
 #include "../Backend.h"
 #include "../../MG_Impl/Log.h"
 // FIX (root cause AF - Primitive Restart): 读取 g_state->primitiveRestart /
@@ -881,7 +882,18 @@ VkPipeline get_or_create_pipeline(GLuint program,
         stages.push_back(fsStage);
     }
 
-    // ---- Dynamic rendering attachment info (Vulkan 1.2 + VK_KHR_dynamic_rendering) ----
+    // ---- Render target description ----
+    //
+    // Two ways to tell a graphics pipeline what it renders into:
+    //   * VK_KHR_dynamic_rendering (or Vulkan 1.3, where it is core): the
+    //     formats travel in VkPipelineRenderingCreateInfo and the pipeline has
+    //     no renderPass.
+    //   * Classic: the formats come from a real VkRenderPass object.
+    //
+    // MobileGL needs neither extension because it keeps the classic path. Mithril
+    // used to have only the first one, which made the extension a hard startup
+    // gate - a device without it could not start at all. The classic path lives
+    // in RenderPassCompat.cpp and is selected here.
     VkFormat colorFmts[8] = {};
     for (int i = 0; i < color_count && i < 8; ++i) colorFmts[i] = color_formats[i];
     VkPipelineRenderingCreateInfo renderingCI{};
@@ -912,7 +924,27 @@ VkPipeline get_or_create_pipeline(GLuint program,
     // ---- Graphics pipeline ----
     VkGraphicsPipelineCreateInfo gi{};
     gi.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-    gi.pNext = &renderingCI;
+    // Classic fallback: build the pipeline against a canonical render pass for
+    // this format signature. Load/store ops do not affect pipeline
+    // compatibility, so one canonical pass covers every flavour the encoder may
+    // begin. A null pass here would be a pipeline with no attachments at all,
+    // which draws nothing - fail loudly instead.
+    VkRenderPass compatRenderPass = VK_NULL_HANDLE;
+    if (b->dynamicRenderingSupported) {
+        gi.pNext = &renderingCI;
+        gi.renderPass = VK_NULL_HANDLE;
+    } else {
+        compatRenderPass = get_or_create_canonical_render_pass(
+            colorFmts, (uint32_t)color_count, depth_format,
+            (VkSampleCountFlagBits)ms.rasterizationSamples);
+        if (compatRenderPass == VK_NULL_HANDLE) {
+            fprintf(stderr, "[mithril] pipeline: no render pass for this format "
+                            "signature and dynamic rendering is unavailable\n");
+            return VK_NULL_HANDLE;
+        }
+        gi.pNext = nullptr;
+        gi.renderPass = compatRenderPass;
+    }
     gi.stageCount = (uint32_t)stages.size();
     gi.pStages = stages.data();
     gi.pVertexInputState = &vertexInput;
@@ -923,7 +955,8 @@ VkPipeline get_or_create_pipeline(GLuint program,
     gi.pDepthStencilState = &ds;
     gi.pColorBlendState = &cb;
     gi.pDynamicState = &dyn;
-    gi.renderPass = VK_NULL_HANDLE;
+    // gi.renderPass was set above (null for dynamic rendering, the canonical
+    // pass otherwise).
     gi.subpass = 0;
 
     // Pipeline layout: use the program's reflected layout (built by

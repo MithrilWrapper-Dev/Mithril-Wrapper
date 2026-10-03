@@ -214,6 +214,9 @@ set(MITHRIL_SOURCES
     Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/Std140.cpp
     Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/UniformArena.cpp
     Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/Pipeline.cpp
+    # Classic VkRenderPass / VkFramebuffer fallback: lets the renderer run on
+    # devices without VK_KHR_dynamic_rendering and below Vulkan 1.3.
+    Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/RenderPassCompat.cpp
     Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/DescriptorSet.cpp
     Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/CommandStream.cpp
     Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/ImageOps.cpp

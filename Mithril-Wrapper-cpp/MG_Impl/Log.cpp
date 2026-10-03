@@ -89,6 +89,25 @@ extern "C" int backtrace(void** buffer, int size) __attribute__((weak));
 namespace crash {
 constexpr int kMaxFrames = 48;
 
+// Whoever owned each signal before we installed ourselves.
+//
+// A JVM installs handlers for SIGSEGV / SIGBUS / SIGFPE and uses them as
+// ordinary control flow: implicit null checks, stack banging, safepoint
+// polling. Those fire constantly and are not crashes. Taking them over and
+// calling _exit() kills the process the first time Java raises one - which is
+// exactly how the macOS / Minecraft E2E started failing at this change: the
+// reported stack has JavaCalls::call_helper and JIT-region frames on top, with
+// no Mithril frame anywhere in it. So record the previous disposition and hand
+// the signal on once we have printed what we need.
+struct SigSlot {
+    int signo;
+    struct sigaction prev;
+};
+static SigSlot g_slots[] = {
+    {SIGSEGV, {}}, {SIGBUS, {}}, {SIGILL, {}}, {SIGABRT, {}}, {SIGFPE, {}},
+};
+constexpr std::size_t kSlotCount = sizeof(g_slots) / sizeof(g_slots[0]);
+
 void write_str(const char* s) {
     if (!s) return;
     std::size_t n = std::strlen(s);
@@ -143,6 +162,28 @@ void handler(int sig, siginfo_t* info, void* context) {
         write_str(buf);
     }
     write_str("[mithril] end of backtrace\n");
+
+    // Hand the signal to the handler we displaced, if there was one, and let it
+    // decide what the signal means. Only when nobody owned the signal do we
+    // treat it as fatal: restore the default disposition and re-raise, so the
+    // platform produces its own crash report rather than a silent _exit().
+    for (std::size_t i = 0; i < kSlotCount; ++i) {
+        if (g_slots[i].signo != sig) continue;
+        const struct sigaction& prev = g_slots[i].prev;
+        if ((prev.sa_flags & SA_SIGINFO) && prev.sa_sigaction &&
+            prev.sa_sigaction != &handler) {
+            prev.sa_sigaction(sig, info, context);
+            return;
+        }
+        if (!(prev.sa_flags & SA_SIGINFO) && prev.sa_handler &&
+            prev.sa_handler != SIG_DFL && prev.sa_handler != SIG_IGN) {
+            prev.sa_handler(sig);
+            return;
+        }
+        break;
+    }
+    ::signal(sig, SIG_DFL);
+    ::raise(sig);
     ::_exit(128 + sig);
 }
 
@@ -152,8 +193,9 @@ struct Install {
         sa.sa_sigaction = &handler;
         sa.sa_flags = SA_SIGINFO;
         sigemptyset(&sa.sa_mask);
-        for (int s : {SIGSEGV, SIGBUS, SIGILL, SIGABRT, SIGFPE})
-            ::sigaction(s, &sa, nullptr);
+        // oldact is kept per signal so the handler can chain to it.
+        for (std::size_t i = 0; i < kSlotCount; ++i)
+            ::sigaction(g_slots[i].signo, &sa, &g_slots[i].prev);
     }
 } g_crash_handler;
 } // namespace crash

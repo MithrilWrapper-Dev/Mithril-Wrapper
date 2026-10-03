@@ -818,6 +818,14 @@ bool init_device() {
     // 实例版本。新增 1.4（MoltenVK 1.2.9+ / 新驱动）与 1.0（老设备兜底）后，
     // 任何 Vulkan 版本都能拿到一个可用实例，不会因为「请求的版本平台不支持」
     // 而 VK_ERROR_INCOMPATIBLE_DRIVER 直接起不来。
+    // VK_API_VERSION_1_4 only exists in headers from Vulkan 1.4 onwards, and
+    // the Android NDK still ships 1.3 headers - naming it there is a hard
+    // compile error, which is what broke every Android ABI. VK_MAKE_VERSION
+    // has been in vulkan_core.h since 1.0 and is bit-identical to
+    // VK_API_VERSION_1_4 (VK_MAKE_API_VERSION(0, 1, 4, 0)).
+#ifndef VK_API_VERSION_1_4
+#define VK_API_VERSION_1_4 VK_MAKE_VERSION(1, 4, 0)
+#endif
     static const uint32_t kApiLevels[] = {
         VK_API_VERSION_1_4,
         VK_API_VERSION_1_3,

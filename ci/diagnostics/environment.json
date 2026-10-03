@@ -1,0 +1,12 @@
+{
+  "commit_sha": "8f5ff542326e0d1ce5f911e308eb34dc8bbc4b6f",
+  "created_at": "2026-10-03T23:31:22.365645Z",
+  "ref": "refs/heads/feat/ios-metal2-moltenvk-compat-and-perf",
+  "repository": "MithrilWrapper-Dev/Mithril-Wrapper",
+  "run_attempt": 1,
+  "run_id": "37162029408",
+  "runner_arch": "ARM64",
+  "runner_os": "macOS",
+  "schema_version": "1.0",
+  "workflow": "Minecraft 1.21.1 on Mithril (MoltenVK) E2E"
+}

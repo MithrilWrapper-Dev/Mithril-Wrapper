@@ -1,0 +1,2 @@
+{"schema_version":"1.0","producer":"glfw-mithril-bridge","event":"glfw_window_created","message":"NO_API Cocoa window bridged to Mithril EGL/CAMetalLayer","mithril_path":"/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/build-minecraft-e2e-native/libmithril.dylib"}
+{"schema_version":"1.0","producer":"glfw-mithril-bridge","event":"context_current","message":"Mithril EGL context made current for Minecraft GLFW window","mithril_path":"/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/build-minecraft-e2e-native/libmithril.dylib"}

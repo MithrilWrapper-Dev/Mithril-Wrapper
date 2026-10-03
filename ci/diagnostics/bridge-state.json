@@ -1,0 +1,12 @@
+{
+  "schema_version": "1.0",
+  "stage": "context_current",
+  "mithril_path": "/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/build-minecraft-e2e-native/libmithril.dylib",
+  "context_count": 1,
+  "swap_count": 0,
+  "get_proc_address_count": 0,
+  "current_context": true,
+  "gl_vendor": "Mithril-Wrapper (EternityQwQ, yitenchen123)",
+  "gl_renderer": "Apple Paravirtual device (Mithril-Wrapper Core) (Apple Paravirtual device, Vulkan 1.2 (MoltenVK))",
+  "gl_version": "4.6.0 §bMithril-Wrapper§r 1.0, Vulkan (MoltenVK) Backend, GIT@8f5ff542326e0d1ce5f911e308eb34dc8bbc4b6f"
+}

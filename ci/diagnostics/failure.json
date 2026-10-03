@@ -1,0 +1,9 @@
+{
+  "failure_id": "RUNTIME_MINECRAFT_NO_INWORLD_FRAME",
+  "message": "run finished without render/inworld-frame.png (gradle_rc=1, saw_present=0)",
+  "phase": "minecraft_client",
+  "recorded_at": "2026-10-03T23:33:50.987021Z",
+  "retryable": false,
+  "schema_version": "1.0",
+  "status": "failed"
+}

@@ -216,6 +216,7 @@ set(MITHRIL_SOURCES
     Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/Pipeline.cpp
     Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/DescriptorSet.cpp
     Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/CommandStream.cpp
+    Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/RenderPassCompat.cpp
     Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/ImageOps.cpp
     # SwapchainCommon.cpp: shared post-surface swapchain creation logic
     # (format query / vkCreateSwapchainKHR / image views / depth-stencil /

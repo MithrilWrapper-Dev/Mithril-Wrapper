@@ -10,6 +10,7 @@
 #include "Resources.h"  // texture_table() / TextureEntry (root cause Y: FBO layout barriers)
 #include "DescriptorSet.h"  // bind_program_descriptors (compute dispatch path)
 #include "Pipeline.h"       // clear_all_pipeline_caches (OOM recovery)
+#include "RenderPassCompat.h"  // 无 VK_KHR_dynamic_rendering 时的传统 pass/framebuffer
 #include "UniformArena.h"   // ubo_arena_rewind (per-frame transient UBO storage)
 #include "../Backend.h"
 #include "../../MG_Impl/Log.h"
@@ -1112,12 +1113,8 @@ void begin_render_pass(VkImageView* color_views, int color_count,
     ri.pStencilAttachment = (e.depthView && format_has_stencil(e.depthFormat))
                             ? &depthAttach : nullptr;
 
-    // Resolve the dynamic-rendering entry point (Vulkan 1.2 + extension).
-    static PFN_vkCmdBeginRenderingKHR fn = nullptr;
-    if (!fn) {
-        fn = (PFN_vkCmdBeginRenderingKHR)vkGetDeviceProcAddr(b->device, "vkCmdBeginRendering");
-        if (!fn) fn = (PFN_vkCmdBeginRenderingKHR)vkGetDeviceProcAddr(b->device, "vkCmdBeginRenderingKHR");
-    }
+    // 入口从 Backend 取，不再用 static 局部量：device-lost 重建后 static 会
+    // 残留旧设备的函数指针，直接崩。
     if (std::getenv("MITHRIL_PASSLOG")) {
         static uint64_t pn=0; ++pn;
         uint32_t tfbo = mithril::g_state? mithril::g_state->currentDrawFBO:0;
@@ -1125,7 +1122,86 @@ void begin_render_pass(VkImageView* color_views, int color_count,
         for(int q=0;q<color_count;q++) fprintf(stderr," [c%d L%d S%d]",q,(int)colorAttachs[q].loadOp,(int)colorAttachs[q].storeOp);
         fprintf(stderr,"\n");
     }
-    if (fn) fn(b->commandBuffer, &ri);
+    if (b->dynamicRenderingSupported && b->cmdBeginRendering) {
+        reinterpret_cast<PFN_vkCmdBeginRenderingKHR>(b->cmdBeginRendering)(b->commandBuffer, &ri);
+    } else {
+        // ---- 传统 VkRenderPass / VkFramebuffer 路径 ----
+        // 设备没有 VK_KHR_dynamic_rendering（Vulkan 1.0/1.1，或 1.2 但无该扩展；
+        // turnip 的 Android HAL 构建与 Adreno 619 系统驱动都属于这一类）。
+        // 走 vkCmdBeginRenderPass —— Vulkan 1.0 核心，任何驱动都有。
+        VkAttachmentLoadOp colorLoad[8];
+        VkAttachmentStoreOp colorStore[8];
+        for (int i = 0; i < e.colorCount; ++i) {
+            colorLoad[i] = colorAttachs[i].loadOp;
+            colorStore[i] = colorAttachs[i].storeOp;
+        }
+        VkFormat colorFmts[8] = {};
+        for (int i = 0; i < e.colorCount; ++i) {
+            colorFmts[i] = (e.activeSwapchain &&
+                            e.activeSwapchain->currentImage >= 0 &&
+                            e.activeSwapchain->currentImage < (int)e.activeSwapchain->views.size() &&
+                            e.colorViews[i] == e.activeSwapchain->views[e.activeSwapchain->currentImage])
+                               ? e.activeSwapchain->format
+                               : VK_FORMAT_UNDEFINED;
+        }
+        // 颜色附件格式未知（用户 FBO，view 不在 swapchain 里）时无法建 pass。
+        // 传统 render pass 必须知道格式，这与动态渲染不同 —— 那里格式由
+        // VkImageView 自身携带。这里从纹理表惰性解析一次。
+        if (e.colorCount > 0 && colorFmts[0] == VK_FORMAT_UNDEFINED) {
+            auto& tbl0 = texture_table();
+            for (int i = 0; i < e.colorCount; ++i) {
+                GLuint tid = (i < e.fboColorTexCount) ? e.fboColorTexIds[i] : 0;
+                if (tid == 0) continue;
+                auto it0 = tbl0.find(tid);
+                if (it0 != tbl0.end()) colorFmts[i] = it0->second.format;
+            }
+        }
+        VkRenderPass compatPass = mithril_vk_render_pass_for(
+            colorFmts, e.colorCount, e.depthView ? e.depthFormat : VK_FORMAT_UNDEFINED,
+            VK_SAMPLE_COUNT_1_BIT, colorLoad, colorStore,
+            e.depthView ? depthAttach.loadOp : VK_ATTACHMENT_LOAD_OP_LOAD,
+            e.depthView ? depthAttach.storeOp : VK_ATTACHMENT_STORE_OP_STORE);
+        VkFramebuffer fb = mithril_vk_framebuffer_for(compatPass, e.colorViews, e.colorCount,
+                                                     e.depthView,
+                                                     (uint32_t)e.width, (uint32_t)e.height);
+        if (compatPass == VK_NULL_HANDLE || fb == VK_NULL_HANDLE) {
+            static bool warnedClassic = false;
+            if (!warnedClassic) {
+                warnedClassic = true;
+                MITHRIL_LOG_WARN("vk", "begin_render_pass: classic path unavailable "
+                                  "(pass=%d fb=%d colors=%d depth=%d %dx%d) — skipping pass",
+                                  compatPass != VK_NULL_HANDLE, fb != VK_NULL_HANDLE,
+                                  e.colorCount, e.depthView != VK_NULL_HANDLE, e.width, e.height);
+            }
+            e.passActive = false;
+            return;
+        }
+        VkClearValue clears[9];
+        uint32_t clearCount = 0;
+        for (int i = 0; i < e.colorCount; ++i) {
+            clears[clearCount].color.float32[0] = colorAttachs[i].clearValue.color.float32[0];
+            clears[clearCount].color.float32[1] = colorAttachs[i].clearValue.color.float32[1];
+            clears[clearCount].color.float32[2] = colorAttachs[i].clearValue.color.float32[2];
+            clears[clearCount].color.float32[3] = colorAttachs[i].clearValue.color.float32[3];
+            ++clearCount;
+        }
+        if (e.depthView) {
+            clears[clearCount].depthStencil.depth = depthAttach.clearValue.depthStencil.depth;
+            clears[clearCount].depthStencil.stencil = depthAttach.clearValue.depthStencil.stencil;
+            ++clearCount;
+        }
+        VkRenderPassBeginInfo bi{};
+        bi.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+        bi.renderPass = compatPass;
+        bi.framebuffer = fb;
+        bi.renderArea.offset.x = 0;
+        bi.renderArea.offset.y = 0;
+        bi.renderArea.extent.width = (uint32_t)e.width;
+        bi.renderArea.extent.height = (uint32_t)e.height;
+        bi.clearValueCount = clearCount;
+        bi.pClearValues = clearCount > 0 ? clears : nullptr;
+        vkCmdBeginRenderPass(b->commandBuffer, &bi, VK_SUBPASS_CONTENTS_INLINE);
+    }
 
     e.passActive = true;
     e.hasCommands = true;  // begin_render_pass recorded real commands
@@ -1151,12 +1227,13 @@ void end_render_pass() {
         return;
     }
 
-    static PFN_vkCmdEndRenderingKHR fn = nullptr;
-    if (!fn) {
-        fn = (PFN_vkCmdEndRenderingKHR)vkGetDeviceProcAddr(b->device, "vkCmdEndRendering");
-        if (!fn) fn = (PFN_vkCmdEndRenderingKHR)vkGetDeviceProcAddr(b->device, "vkCmdEndRenderingKHR");
+    // 与 begin_render_pass 对称：动态渲染 → vkCmdEndRendering；
+    // 否则 → vkCmdEndRenderPass（Vulkan 1.0 核心）。
+    if (b->dynamicRenderingSupported && b->cmdEndRendering) {
+        reinterpret_cast<PFN_vkCmdEndRenderingKHR>(b->cmdEndRendering)(b->commandBuffer);
+    } else {
+        vkCmdEndRenderPass(b->commandBuffer);
     }
-    if (fn) fn(b->commandBuffer);
 
     // ---- Root cause Y (CRITICAL): barrier user-FBO attachments back to ----
     // ---- read-only layouts and update TextureEntry::currentLayout.      --

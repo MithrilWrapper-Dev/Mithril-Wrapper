@@ -7,6 +7,7 @@
 #include "Device.h"
 #include "Resources.h"
 #include "DescriptorSet.h"
+#include "RenderPassCompat.h"   // 无 VK_KHR_dynamic_rendering 时的传统 VkRenderPass
 #include "../Backend.h"
 #include "../../MG_Impl/Log.h"
 // FIX (root cause AF - Primitive Restart): 读取 g_state->primitiveRestart /
@@ -321,6 +322,26 @@ uint64_t hash_signature(GLuint program, const MGVertexAttrib* attribs, int attri
     mix(&dte, sizeof(dte));
     mix(&dwm, sizeof(dwm));
     mix(&dfn, sizeof(dfn));
+    // 无 VK_EXT_extended_dynamic_state 时，剔除模式 / 正面朝向也被烘进静态
+    // 管线（见下方 rs.cullMode / rs.frontFace），因此必须进缓存键，否则
+    // glEnable(GL_CULL_FACE) / glCullFace / glFrontFace 的变化会命中旧管线，
+    // 剔除行为不生效或错误。
+    bool cfe = (mithril::g_state && mithril::g_state->cullFace);
+    GLenum cmode = mithril::g_state ? mithril::g_state->cullMode : GL_BACK;
+    GLenum fface = mithril::g_state ? mithril::g_state->frontFace : GL_CCW;
+    // is_default_fbo 决定正面朝向的 Y 翻转补偿（与 Drawing.cpp 的
+    // invert_front_face 逻辑同源），本身已在键里，这里只需再混入状态值。
+    bool fdfbo = (is_default_fbo != 0);
+    // 只在真的把这些状态烘进管线时才混入：动态状态下混入会白白把缓存
+    // 拆成几十倍（每次 glFrontFace 都新建管线），纯性能损失无收益。
+    Backend* bk = backend();
+    bool bakeRasterState = (bk && !bk->extendedDynamicStateSupported);
+    if (bakeRasterState) {
+        mix(&cfe, sizeof(cfe));
+        mix(&cmode, sizeof(cmode));
+        mix(&fface, sizeof(fface));
+        mix(&fdfbo, sizeof(fdfbo));
+    }
     return h;
 }
 
@@ -678,8 +699,31 @@ VkPipeline get_or_create_pipeline(GLuint program,
     rs.depthClampEnable = VK_FALSE;
     rs.rasterizerDiscardEnable = VK_FALSE;
     rs.polygonMode = VK_POLYGON_MODE_FILL;
-    rs.cullMode = VK_CULL_MODE_NONE;        // dynamic via vkCmdSetCullMode
-    rs.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE; // dynamic
+    // 有 VK_EXT_extended_dynamic_state 时这两个状态由 vkCmdSetCullMode /
+    // vkCmdSetFrontFace 动态下发，管线里填什么都会被覆盖；没有时必须烘成
+    // 静态值，否则剔除与正面朝向永远停在 NONE/CCW —— 这正是旧代码里
+    // "cullMode 写死 NONE 且声明为动态状态"造成的：缺扩展时既没有动态
+    // 下发、也没有静态回退，三角形朝向全错。
+    if (b->extendedDynamicStateSupported) {
+        rs.cullMode = VK_CULL_MODE_NONE;                        // dynamic via vkCmdSetCullMode
+        rs.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;         // dynamic
+    } else {
+        // 与 Drawing.cpp 的剔除决策同源（含 Y 翻转的 frontFace=CW 补偿）：
+        //   cullFace 关闭 -> NONE
+        //   GL_FRONT / GL_BACK / GL_FRONT_AND_BACK -> 对应 VK_CULL_MODE_*
+        //   正面朝向：GL_CCW -> VK 的 CW（窗口 y 轴方向相反，缠绕反转）
+        if (mithril::g_state && mithril::g_state->cullFace) {
+            if (mithril::g_state->cullMode == GL_FRONT)      rs.cullMode = VK_CULL_MODE_FRONT_BIT;
+            else if (mithril::g_state->cullMode == GL_BACK)  rs.cullMode = VK_CULL_MODE_BACK_BIT;
+            else                                             rs.cullMode = VK_CULL_MODE_FRONT_AND_BACK;
+            rs.frontFace = (mithril::g_state->frontFace == GL_CCW)
+                               ? VK_FRONT_FACE_CLOCKWISE
+                               : VK_FRONT_FACE_COUNTER_CLOCKWISE;
+        } else {
+            rs.cullMode = VK_CULL_MODE_NONE;
+            rs.frontFace = VK_FRONT_FACE_CLOCKWISE;  // 与动态路径的默认一致
+        }
+    }
     rs.depthBiasEnable = VK_FALSE;
     rs.lineWidth = 1.0f;
 
@@ -812,10 +856,25 @@ VkPipeline get_or_create_pipeline(GLuint program,
         VK_DYNAMIC_STATE_DEPTH_COMPARE_OP,
         VK_DYNAMIC_STATE_BLEND_CONSTANTS,
     };
+    // 只有真的能下发时才声明扩展动态状态。把 VK_DYNAMIC_STATE_CULL_MODE 等
+    // 声明进 dynStates 却没有 vkCmdSetCullMode 可调，等于「声明了动态、
+    // 实际永远停在管线里的静态值」—— 在缺扩展的设备上剔除/深度状态失效。
+    // 反过来，缺扩展却声明这些状态还会让 vkCreateGraphicsPipelines 在严格
+    // 驱动上直接失败（VK_ERROR_FEATURE_NOT_PRESENT）。
+    VkDynamicState dynStatesCore[] = {
+        VK_DYNAMIC_STATE_VIEWPORT,
+        VK_DYNAMIC_STATE_SCISSOR,
+        VK_DYNAMIC_STATE_BLEND_CONSTANTS,
+    };
     VkPipelineDynamicStateCreateInfo dyn{};
     dyn.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-    dyn.dynamicStateCount = (uint32_t)(sizeof(dynStates) / sizeof(dynStates[0]));
-    dyn.pDynamicStates = dynStates;
+    if (b->extendedDynamicStateSupported) {
+        dyn.dynamicStateCount = (uint32_t)(sizeof(dynStates) / sizeof(dynStates[0]));
+        dyn.pDynamicStates = dynStates;
+    } else {
+        dyn.dynamicStateCount = (uint32_t)(sizeof(dynStatesCore) / sizeof(dynStatesCore[0]));
+        dyn.pDynamicStates = dynStatesCore;
+    }
 
     // ---- Shader stages ----
     std::vector<VkPipelineShaderStageCreateInfo> stages;
@@ -870,7 +929,28 @@ VkPipeline get_or_create_pipeline(GLuint program,
     // ---- Graphics pipeline ----
     VkGraphicsPipelineCreateInfo gi{};
     gi.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-    gi.pNext = &renderingCI;
+    // 无 VK_KHR_dynamic_rendering 时管线必须挂在一个真实的 VkRenderPass 上，
+    // 且不能带 VkPipelineRenderingCreateInfo（该结构体本身来自同一扩展）。
+    // 这里用「规范」pass（LOAD/STORE，按附件签名缓存）：render pass 兼容性
+    // 规则允许它与运行时的实际 pass 在 loadOp/storeOp/layout 上不同，只要
+    // format 与 sampleCount 一致。
+    VkRenderPass compatPass = VK_NULL_HANDLE;
+    if (!b->dynamicRenderingSupported) {
+        compatPass = mithril_vk_render_pass_for(colorFmts, color_count, depth_format,
+                                                ms.rasterizationSamples,
+                                                nullptr, nullptr,
+                                                VK_ATTACHMENT_LOAD_OP_LOAD,
+                                                VK_ATTACHMENT_STORE_OP_STORE);
+        if (compatPass == VK_NULL_HANDLE) {
+            MITHRIL_LOG_WARN("vk", "no compatible VkRenderPass for this attachment "
+                                   "signature (%d color, depth=%u) — skipping pipeline",
+                             color_count, (unsigned)depth_format);
+            return VK_NULL_HANDLE;
+        }
+        gi.pNext = nullptr;
+    } else {
+        gi.pNext = &renderingCI;
+    }
     gi.stageCount = (uint32_t)stages.size();
     gi.pStages = stages.data();
     gi.pVertexInputState = &vertexInput;
@@ -881,7 +961,7 @@ VkPipeline get_or_create_pipeline(GLuint program,
     gi.pDepthStencilState = &ds;
     gi.pColorBlendState = &cb;
     gi.pDynamicState = &dyn;
-    gi.renderPass = VK_NULL_HANDLE;
+    gi.renderPass = compatPass;
     gi.subpass = 0;
 
     // Pipeline layout: use the program's reflected layout (built by
@@ -1080,6 +1160,9 @@ void clear_all_pipeline_caches() {
             pr.computePipeline = VK_NULL_HANDLE;
         }
     }
+    // 传统路径的 VkRenderPass / VkFramebuffer 同样绑在当前 device 上，
+    // device 重建后必须一起销毁重建，否则会引用已销毁的 device 句柄。
+    mithril_vk_destroy_render_pass_cache();
     MITHRIL_LOG_INFO("vk", "clear_all_pipeline_caches: cleared all "
                       "failedSignatures + destroyed all cached pipelines "
                       "(device recovery)");

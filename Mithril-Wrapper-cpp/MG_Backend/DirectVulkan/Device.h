@@ -120,6 +120,11 @@ struct Backend {
     // "undefined symbol". Resolving them with vkGetDeviceProcAddr keeps the
     // library loadable on both, and the matching *Supported flags below already
     // gate every call site, so a device that lacks them simply never calls in.
+    // vkCmdBeginRendering / vkCmdEndRendering（VK_KHR_dynamic_rendering，
+    // 1.3 起为核心）。存在 Backend 上而不是调用方的 static 局部量：
+    // device-lost 重建后 static 会残留旧设备的函数指针 → 直接崩。
+    PFN_vkVoidFunction cmdBeginRendering = nullptr;
+    PFN_vkVoidFunction cmdEndRendering = nullptr;
     PFN_vkVoidFunction cmdSetCullMode = nullptr;
     PFN_vkVoidFunction cmdSetFrontFace = nullptr;
     PFN_vkVoidFunction cmdSetDepthTestEnable = nullptr;

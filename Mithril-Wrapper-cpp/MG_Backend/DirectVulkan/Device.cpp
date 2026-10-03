@@ -23,6 +23,7 @@
 #include "CommandStream.h"  // end_render_pass, ensure_command_buffer_recording, render_pass_active
 #include "Swapchain.h"      // acquire semaphore edge for out-of-band submits
 #include "Pipeline.h"     // clear_all_pipeline_caches() for deviceLost recovery
+#include "RenderPassCompat.h"  // 传统 VkRenderPass/VkFramebuffer 缓存（无 dynamic rendering 时的退路）
 #include "DescriptorSet.h"  // reset_all_descriptor_pools() for swapchain rebuild recovery
 #include "UniformArena.h"  // ubo_arena_shutdown() — transient UBO arena teardown
 #include "../../MG_State/State.h"  // kMaxTextureUnits 等容量常量（backend_device_limit 用来夹紧上报值）
@@ -813,10 +814,16 @@ bool init_device() {
     // instance to 1.2 forces them to come from the extension list, and a driver
     // that promoted them to core may not report them there. Stepping down is
     // still safe: an unsupported level just fails and we try the next one.
+    // 覆盖 1.4 / 1.3 / 1.2 / 1.1 / 1.0：从高到低逐个试，第一个被接受的即
+    // 实例版本。新增 1.4（MoltenVK 1.2.9+ / 新驱动）与 1.0（老设备兜底）后，
+    // 任何 Vulkan 版本都能拿到一个可用实例，不会因为「请求的版本平台不支持」
+    // 而 VK_ERROR_INCOMPATIBLE_DRIVER 直接起不来。
     static const uint32_t kApiLevels[] = {
+        VK_API_VERSION_1_4,
         VK_API_VERSION_1_3,
         VK_API_VERSION_1_2,
         VK_API_VERSION_1_1,
+        VK_API_VERSION_1_0,
     };
     bool instanceCreated = false;
     const std::vector<const char*>* const variants[] = { &instExtsWsi, &instExts };
@@ -1143,21 +1150,29 @@ bool init_device() {
     // rejects such a device outright and the renderer never starts.
     const bool dynRenderingExt =
         has_extension(devExtProps, VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME);
-    const bool hasDynamicRendering =
+    // 非 const：init_device 末尾会根据 vkCmdBeginRendering 的实际可解析性
+    // 再降级一次（声称支持但入口取不到 → 走传统路径）。
+    bool hasDynamicRendering =
         dynRenderingExt || b->props.apiVersion >= VK_API_VERSION_1_3;
     if (dynRenderingExt) {
         devExts.push_back(VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME);
     } else if (!hasDynamicRendering) {
-        MITHRIL_LOG_ERROR("vk",
-            "设备不支持 VK_KHR_dynamic_rendering（%s，Vulkan %u.%u.%u）。"
-            "本渲染器的命令录制完全依赖该扩展，且当前请求的是 Vulkan 1.2"
-            "（dynamic_rendering 要到 1.3 才进核心），没有 VkRenderPass 退路。"
-            "请升级 MoltenVK 到 1.1.0 或更高版本（iOS 14+ / macOS 11+）。",
+        // 不再是硬失败：CommandStream.cpp 的 begin_render_pass /
+        // end_render_pass 在无该扩展时改走传统 VkRenderPass + VkFramebuffer
+        // （RenderPassCompat.cpp），Pipeline.cpp 也据此把管线挂在真实
+        // renderPass 上而不是 VkPipelineRenderingCreateInfo。
+        //
+        // 这正是 Zink / MobileGL 能吃下 turnip（Android HAL 构建不暴露 WSI，
+        // 也不暴露 dynamic_rendering）的原因：它们从一开始就保留传统路径。
+        // Adreno 619 上的系统驱动只有 Vulkan 1.1.128，同样落到这里。
+        MITHRIL_LOG_WARN("vk",
+            "VK_KHR_dynamic_rendering 不可用（%s，Vulkan %u.%u.%u）——"
+            "命令录制改用传统 VkRenderPass/VkFramebuffer 路径。",
             b->props.deviceName,
             VK_VERSION_MAJOR(b->props.apiVersion),
             VK_VERSION_MINOR(b->props.apiVersion),
             VK_VERSION_PATCH(b->props.apiVersion));
-        return false;
+        hasDynamicRendering = false;
     }
     // VK_EXT_extended_dynamic_state: vkCmdSetCullMode/FrontFace/DepthTestEnable/
     // DepthWriteEnable/DepthCompareOp etc. without rebuilding pipelines.
@@ -1174,17 +1189,24 @@ bool init_device() {
     // is core in Vulkan 1.3.
     const bool extDynStateExt =
         has_extension(devExtProps, VK_EXT_EXTENDED_DYNAMIC_STATE_EXTENSION_NAME);
-    const bool hasExtDynState =
+    bool hasExtDynState =
         extDynStateExt || b->props.apiVersion >= VK_API_VERSION_1_3;
     if (extDynStateExt) {
         devExts.push_back(VK_EXT_EXTENDED_DYNAMIC_STATE_EXTENSION_NAME);
     } else if (!hasExtDynState) {
-        MITHRIL_LOG_ERROR("vk",
-            "设备不支持 VK_EXT_extended_dynamic_state（%s）。"
-            "剔除模式/正面朝向/深度测试全部通过 vkCmdSet* 动态下发，"
-            "缺少该扩展会导致直接调用空函数指针而崩溃。"
-            "请升级 MoltenVK 到 1.1.0 或更高版本。", b->props.deviceName);
-        return false;
+        // 同样不再是硬失败。缺少时剔除模式 / 正面朝向 / 深度测试全部烘进
+        // 静态管线（Pipeline.cpp），并且纳入管线缓存键（hash_signature），
+        // 所以状态切换仍然生效 —— 只是变成「换管线」而不是「下发动态状态」。
+        // CommandStream.cpp 的 backend_set_cull_mode 那一族本来就有
+        // extendedDynamicStateSupported 判空，不会调用空函数指针。
+        MITHRIL_LOG_WARN("vk",
+            "VK_EXT_extended_dynamic_state 不可用（%s，Vulkan %u.%u.%u）——"
+            "剔除/正面朝向/深度状态改为烘进静态管线。",
+            b->props.deviceName,
+            VK_VERSION_MAJOR(b->props.apiVersion),
+            VK_VERSION_MINOR(b->props.apiVersion),
+            VK_VERSION_PATCH(b->props.apiVersion));
+        hasExtDynState = false;
     }
     // FIX (root cause AE - GL_UNSIGNED_BYTE 索引支持):
     // VK_EXT_index_type_uint8 提供 VK_INDEX_TYPE_UINT8，让 GL_UNSIGNED_BYTE
@@ -1467,6 +1489,29 @@ bool init_device() {
         !b->cmdSetDepthWriteEnable || !b->cmdSetDepthCompareOp) {
         MITHRIL_LOG_INFO("vk", "extended dynamic state unavailable: entrypoints not resolved");
         b->extendedDynamicStateSupported = false;
+    }
+    // Dynamic rendering 的二次校验：扩展/版本声称支持但入口取不到时，
+    // begin_render_pass 里的 `if (fn)` 会安静跳过 —— pass 被标记成 active
+    // 却没有绑定任何附件 → 纯黑屏、无报错、无验证层警告，是最难查的一类。
+    // 这里主动降级到传统 VkRenderPass/VkFramebuffer 路径。
+    b->cmdBeginRendering = nullptr;
+    b->cmdEndRendering = nullptr;
+    if (b->dynamicRenderingSupported) {
+        PFN_vkVoidFunction br = resolve_cmd("vkCmdBeginRendering", "vkCmdBeginRenderingKHR");
+        PFN_vkVoidFunction er = resolve_cmd("vkCmdEndRendering", "vkCmdEndRenderingKHR");
+        if (!br || !er) {
+            MITHRIL_LOG_WARN("vk",
+                "dynamic rendering 声称可用但入口未解析到 —— 改用传统 "
+                "VkRenderPass/VkFramebuffer 路径");
+            b->dynamicRenderingSupported = false;
+        } else {
+            b->cmdBeginRendering = br;
+            b->cmdEndRendering = er;
+        }
+    }
+    if (!b->dynamicRenderingSupported) {
+        MITHRIL_LOG_INFO("vk",
+            "render path: classic VkRenderPass/VkFramebuffer (no dynamic rendering)");
     }
 
     // ---- Command pool + primary command buffer ----
@@ -1763,6 +1808,8 @@ void shutdown_device() {
     // through b->device) and is safe here because of the vkDeviceWaitIdle at
     // the top of this function.
     ubo_arena_shutdown();
+    // 传统路径缓存的 VkRenderPass / VkFramebuffer 必须在 vkDestroyDevice 之前销毁。
+    mithril_vk_destroy_render_pass_cache();
     if (b->device) { vkDestroyDevice(b->device, nullptr); b->device = VK_NULL_HANDLE; }
     if (b->instance) { vkDestroyInstance(b->instance, nullptr); b->instance = VK_NULL_HANDLE; }
     b->initialized = false;

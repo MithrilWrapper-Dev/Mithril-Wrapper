@@ -20,6 +20,7 @@
 #include "Swapchain.h"
 #include "CommandStream.h"
 #include "Pipeline.h"
+#include "RenderPassCompat.h"  // traditional VkRenderPass fallback (no dynamic rendering)
 #include "Resources.h"
 #include "../Backend.h"
 #include "../../MG_State/State.h"
@@ -1480,6 +1481,12 @@ struct BqGpu {
     // format; renderPass=VK_NULL_HANDLE, compatible with the begin_render_pass()
     // frame path.
     std::unordered_map<uint32_t, VkPipeline>   drPipeByFmt;
+    // Same blit pipelines compiled against a traditional VkRenderPass, for
+    // devices without VK_KHR_dynamic_rendering. Compiled against the CANONICAL
+    // pass (LOAD/STORE); loadOp/storeOp do not participate in render-pass
+    // compatibility, so these stay usable with whatever variant
+    // begin_render_pass() picks at recording time.
+    std::unordered_map<uint32_t, VkPipeline>   classicPipeByFmt;
     // One descriptor set per swapchain image index; rebuilt only when that image
     // is re-acquired (prior present complete -> prior set not in GPU use).
     std::vector<VkDescriptorSet>               frameSets;
@@ -1847,9 +1854,14 @@ void blit_to_default_quad(VkImage src_image, VkFormat src_format,
 // Dynamic-rendering blit pipeline (renderPass=VK_NULL_HANDLE), cached by format.
 VkPipeline bq_dr_pipeline(VkFormat dst_fmt) {
     BqGpu& g = bq_gpu();
-    auto it = g.drPipeByFmt.find((uint32_t)dst_fmt);
-    if (it != g.drPipeByFmt.end()) return it->second;
     Backend* b = backend();
+    if (b && !b->dynamicRenderingSupported) {
+        auto cit = g.classicPipeByFmt.find((uint32_t)dst_fmt);
+        if (cit != g.classicPipeByFmt.end()) return cit->second;
+    } else {
+        auto it = g.drPipeByFmt.find((uint32_t)dst_fmt);
+        if (it != g.drPipeByFmt.end()) return it->second;
+    }
 
     VkVertexInputBindingDescription bd{};
     bd.binding = 0; bd.stride = 16; bd.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
@@ -1885,22 +1897,45 @@ VkPipeline bq_dr_pipeline(VkFormat dst_fmt) {
     stg[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     stg[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT; stg[1].module = g.fs; stg[1].pName = "main";
 
+    // A graphics pipeline carries EITHER VkPipelineRenderingCreateInfo in pNext
+    // with renderPass == VK_NULL_HANDLE, OR a real VkRenderPass — never both.
+    // Handing a driver that has no VK_KHR_dynamic_rendering the
+    // rendering-create-info pNext it does not know is how Adreno died inside
+    // vkCreateGraphicsPipelines (SIGSEGV, si_addr 0xe8) on the first
+    // glBlitFramebuffer: the blit-quad pipeline was the one place that still
+    // built itself unconditionally for dynamic rendering.
     VkPipelineRenderingCreateInfo rci{VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO};
     rci.colorAttachmentCount = 1; rci.pColorAttachmentFormats = &dst_fmt;
+    VkRenderPass compatRP = VK_NULL_HANDLE;
+    if (!b->dynamicRenderingSupported) {
+        compatRP = get_canonical_render_pass(&dst_fmt, 1, VK_FORMAT_UNDEFINED, false);
+        if (compatRP == VK_NULL_HANDLE) {
+            MITHRIL_LOG_WARN("blit-quad", "canonical render pass unavailable fmt=%d",
+                             (int)dst_fmt);
+            return VK_NULL_HANDLE;
+        }
+    }
     VkGraphicsPipelineCreateInfo gi{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
-    gi.pNext = &rci; gi.stageCount = 2; gi.pStages = stg;
+    if (compatRP != VK_NULL_HANDLE) {
+        gi.pNext = nullptr; gi.renderPass = compatRP;
+    } else {
+        gi.pNext = &rci; gi.renderPass = VK_NULL_HANDLE;
+    }
+    gi.stageCount = 2; gi.pStages = stg;
     gi.pVertexInputState = &vi; gi.pInputAssemblyState = &ia; gi.pViewportState = &vp;
     gi.pRasterizationState = &rs; gi.pMultisampleState = &ms; gi.pDepthStencilState = &ds;
     gi.pColorBlendState = &cb; gi.pDynamicState = &dyn;
-    gi.renderPass = VK_NULL_HANDLE; gi.subpass = 0; gi.layout = g.pipeLayout;
+    gi.subpass = 0; gi.layout = g.pipeLayout;
 
     VkPipeline pipe = VK_NULL_HANDLE;
     VkResult r = vkCreateGraphicsPipelines(b->device, b->pipelineCache, 1, &gi, nullptr, &pipe);
     if (r != VK_SUCCESS) {
-        MITHRIL_LOG_WARN("blit-quad", "dr pipeline create failed r=%d fmt=%d",(int)r,(int)dst_fmt);
+        MITHRIL_LOG_WARN("blit-quad", "blit pipeline create failed r=%d fmt=%d classic=%d",
+                         (int)r, (int)dst_fmt, (int)(compatRP != VK_NULL_HANDLE));
         return VK_NULL_HANDLE;
     }
-    g.drPipeByFmt[(uint32_t)dst_fmt] = pipe;
+    if (compatRP != VK_NULL_HANDLE) g.classicPipeByFmt[(uint32_t)dst_fmt] = pipe;
+    else                            g.drPipeByFmt[(uint32_t)dst_fmt] = pipe;
     return pipe;
 }
 
@@ -2079,6 +2114,9 @@ void main(){ outc = vec4(1.0,1.0,0.0,1.0); })";
 void probe_fixed_quad() {
     static VkPipeline pipe = VK_NULL_HANDLE;
     Backend* b = backend();
+    // Diagnostic helper: it records with vkCmdBeginRendering, so it is
+    // meaningless (and would crash) on a device without dynamic rendering.
+    if (!b || !b->dynamicRenderingSupported) return;
     VkCommandBuffer cmd = b->commandBuffer;
     if (pipe == VK_NULL_HANDLE) {
         std::vector<uint32_t> vspv,fspv;
@@ -2141,6 +2179,8 @@ void main(){ outc = vec4(0.0,1.0,1.0,1.0); })";
 
 void probe_ubo_fixed(GLuint program) {
     Backend* b = backend();
+    // Diagnostic helper: vkCmdBeginRendering only. See probe_fixed_quad().
+    if (!b || !b->dynamicRenderingSupported) return;
     VkCommandBuffer cmd = b->commandBuffer;
     auto it = program_table().find(program);
     if (it == program_table().end()) return;

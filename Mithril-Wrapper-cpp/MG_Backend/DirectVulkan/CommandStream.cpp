@@ -194,10 +194,6 @@ EncoderState& encoder() {
     return s;
 }
 
-VkRenderPass current_compat_render_pass() {
-    return encoder().currentRenderPass;
-}
-
 /*
  * Record an image-memory barrier transitioning `image` from `oldLayout` to
  * `newLayout` on the active command buffer. Used by begin_render_pass() /
@@ -347,6 +343,14 @@ void record_layout_barrier(VkCommandBuffer cb, VkImage image, VkFormat format,
 }
 
 } // namespace
+
+// NOTE: must live OUTSIDE the anonymous namespace above. Pipeline.cpp calls
+// mithril::vk::current_compat_render_pass() (declared in CommandStream.h);
+// defining it inside an anonymous namespace gives it internal linkage, which
+// links fine in this TU but leaves Pipeline.cpp with an undefined symbol.
+VkRenderPass current_compat_render_pass() {
+    return encoder().currentRenderPass;
+}
 
 bool render_pass_active() { return encoder().passActive; }
 

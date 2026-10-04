@@ -1171,12 +1171,23 @@ void begin_render_pass(VkImageView* color_views, int color_count,
         }
         VkFormat colorFmts[8] = {};
         for (int i = 0; i < e.colorCount; ++i) {
-            colorFmts[i] = (e.activeSwapchain &&
-                            e.activeSwapchain->currentImage >= 0 &&
-                            e.activeSwapchain->currentImage < (int)e.activeSwapchain->views.size() &&
-                            e.colorViews[i] == e.activeSwapchain->views[e.activeSwapchain->currentImage])
-                               ? e.activeSwapchain->format
-                               : VK_FORMAT_UNDEFINED;
+            // FIX (GPU fault on the first real draw): the swapchain format is a
+            // property of the SWAPCHAIN, not of the currently acquired image
+            // index. Gating the lookup on currentImage (which is -1 before an
+            // acquire, and during the deviceLost recovery window) used to leave
+            // the format UNDEFINED, so the classic VkRenderPass was created with
+            // an UNDEFINED attachment format. An UNDEFINED-format attachment is
+            // incompatible with the graphics pipeline, which is compiled against
+            // the REAL format -> the first vkCmdDraw faults the GPU
+            // (VK_ERROR_DEVICE_LOST). Frames with draws=0 never bind a pipeline,
+            // which is exactly why only frames with geometry died.
+            bool isSwapView = false;
+            if (e.activeSwapchain && e.colorViews[i]) {
+                for (size_t k = 0; k < e.activeSwapchain->views.size(); ++k) {
+                    if (e.colorViews[i] == e.activeSwapchain->views[k]) { isSwapView = true; break; }
+                }
+            }
+            colorFmts[i] = isSwapView ? e.activeSwapchain->format : VK_FORMAT_UNDEFINED;
         }
         // 颜色附件格式未知（用户 FBO，view 不在 swapchain 里）时无法建 pass。
         // 传统 render pass 必须知道格式，这与动态渲染不同 —— 那里格式由
@@ -1193,6 +1204,36 @@ void begin_render_pass(VkImageView* color_views, int color_count,
                 if (tid == 0) continue;
                 auto it0 = tbl0.find(tid);
                 if (it0 != tbl0.end()) colorFmts[i] = it0->second.format;
+            }
+        }
+        // Diagnostic: print the exact classic-path signature. A pipeline
+        // compiled against a different signature is incompatible and faults the
+        // GPU at the first draw, so this must be comparable with the pipeline
+        // compile-time signature.
+        {
+            static uint32_t sigN = 0;
+            if (sigN < 12) {
+                ++sigN;
+                MITHRIL_LOG_WARN("vk", "classic pass sig #%u: colors=%d fmt0=%d fmt1=%d depthFmt=%d depthView=%d swapFmt=%d curImg=%d",
+                                 sigN, e.colorCount, (int)colorFmts[0],
+                                 e.colorCount > 1 ? (int)colorFmts[1] : -1,
+                                 (int)(e.depthView ? e.depthFormat : VK_FORMAT_UNDEFINED),
+                                 e.depthView != VK_NULL_HANDLE,
+                                 e.activeSwapchain ? (int)e.activeSwapchain->format : -1,
+                                 e.activeSwapchain ? e.activeSwapchain->currentImage : -99);
+            }
+            for (int i = 0; i < e.colorCount; ++i) {
+                if (colorFmts[i] == VK_FORMAT_UNDEFINED) {
+                    static uint32_t undN = 0;
+                    if (undN < 8) {
+                        ++undN;
+                        MITHRIL_LOG_WARN("vk", "classic pass: color attachment %d format UNRESOLVED "
+                                          "(view=%d fboColorTexCount=%d tid=%u) — pass would be "
+                                          "incompatible with every pipeline",
+                                          i, e.colorViews[i] != VK_NULL_HANDLE, e.fboColorTexCount,
+                                          (i < e.fboColorTexCount) ? e.fboColorTexIds[i] : 0u);
+                    }
+                }
             }
         }
         VkRenderPass compatPass = mithril_vk_render_pass_for(

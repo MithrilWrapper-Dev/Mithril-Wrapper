@@ -607,18 +607,25 @@ void ensure_library() {
     // try, in order: its own exported vk* symbols, the ICD discovery entry, and
     // finally the HAL handshake (HMI -> open -> hwvulkan_device_t), which is
     // the path a HAL module actually expects.
-    // When a specific driver was asked for, prefer handing it to the platform
-    // loader over driving it ourselves: only the loader has WSI. If this works,
-    // the driver is not loaded directly at all and g_handle is the loader.
-    void* hook_loader = nullptr;
-    if (explicit_path || (turnip && turnip[0])) {
-        const char* name = explicit_path && explicit_path[0] ? explicit_path
-                                                             : "libvulkan_freedreno.so";
-        hook_loader = try_hook_route(driver_dir, name);
-    }
-
+    // Drive an explicitly requested driver directly, and only try to route the
+    // platform loader at it if the direct handshake yields nothing usable.
+    //
+    // The order used to be the other way round, on the theory that only the
+    // loader has WSI. That theory was falsified by a real run on the reference
+    // device: the hook reported "hook route active (loader redirected)", yet
+    // /proc/maps contained no libvulkan_freedreno.so and the enumerated device
+    // was still "Adreno (TM) 619 (api 0x401080)" - the stock 1.1 driver. The
+    // loader resolves its HAL through hw_get_module well before our hook is in
+    // place, so the redirect never fires; it only ever produced the stock
+    // driver while looking like it had worked.
+    //
+    // The direct path is the one that has actually been observed to reach
+    // Turnip ("Physical device: Turnip Adreno (TM) 619 (v32) (api 0x40316b)"),
+    // so it goes first. It has no WSI, but that is not fatal: create_swapchain
+    // detects the missing VK_KHR_swapchain and switches to the offscreen
+    // present path, which is exactly how Zink drives a Mesa HAL driver.
     void* driver_handle = nullptr;
-    if (!hook_loader && (explicit_path || (turnip && turnip[0]))) {
+    if (explicit_path || (turnip && turnip[0])) {
         for (int i = 0; i < n && i < kLoaderSlot; ++i) {
             if (!cands[i]) continue;
             driver_handle = try_load(cands[i], driver_dir);
@@ -628,6 +635,14 @@ void ensure_library() {
                 break;
             }
         }
+    }
+
+    // Only reached when the requested driver could not be driven directly.
+    void* hook_loader = nullptr;
+    if (!driver_handle && (explicit_path || (turnip && turnip[0]))) {
+        const char* name = explicit_path && explicit_path[0] ? explicit_path
+                                                             : "libvulkan_freedreno.so";
+        hook_loader = try_hook_route(driver_dir, name);
     }
 
     void* loader_handle = hook_loader;

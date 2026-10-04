@@ -106,6 +106,16 @@ Swapchain* create_swapchain_offscreen(ANativeWindow* win, int width, int height,
     // launcher can drop its own reference as soon as the surface is created.
     ANativeWindow_acquire(win);
 
+    // Pin the window's buffer geometry to exactly what we render and what
+    // blit_to_window() knows how to convert. There is no VkSwapchainKHR here
+    // to negotiate a format with, so ANativeWindow is free to hand back
+    // anything on lock - including formats the blit does not cover, which
+    // shows up as a permanently black screen rather than an error. Declaring
+    // RGBA8 up front removes that failure mode entirely and also resizes the
+    // window's buffer pool to match the drawable.
+    ANativeWindow_setBuffersGeometry(win, width, height,
+                                     AHARDWAREBUFFER_FORMAT_R8G8B8A8_UNORM);
+
     for (uint32_t i = 0; i < kImageCount; ++i) {
         VkImageCreateInfo ci{};
         ci.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;

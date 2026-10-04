@@ -121,6 +121,15 @@ void commit_frame();
  */
 void reset_encoder_state();
 
+/*
+ * The VkRenderPass the current classic pass was actually begun with, or
+ * VK_NULL_HANDLE under dynamic rendering (which has no pass object) or when no
+ * pass is active. Graphics pipelines are compiled against this exact handle so
+ * that the pipeline and the render pass cannot drift apart — see the comment
+ * on EncoderState::currentRenderPass.
+ */
+VkRenderPass current_compat_render_pass();
+
 } // namespace vk
 } // namespace mithril
 

@@ -156,6 +156,26 @@ struct EncoderState {
     // not leak into a pass that has no depth attachment.
     VkFormat depthFormat = VK_FORMAT_UNDEFINED;
 
+    // ---- The VkRenderPass this pass was actually begun with ----
+    // Classic path only; dynamic rendering has no pass object.
+    //
+    // Rationale: MobileGL's PipelineFactory hashes the render pass handle into
+    // the pipeline cache key (PipelineFactory.cpp:201) and asserts it is
+    // non-null (:379), and evicts pipelines when their pass is destroyed
+    // (EvictByRenderPasses). That is: the pipeline is compiled against the
+    // SAME VkRenderPass handle that vkCmdBeginRenderPass later uses, never a
+    // second "compatible" one.
+    //
+    // Mithril instead compiled pipelines against a canonical pass keyed only
+    // by the format signature, while drawing inside a separately keyed pass
+    // that also carries loadOp/storeOp. loadOp/storeOp do not participate in
+    // render-pass compatibility, so this is legal in principle — but every
+    // other dimension (format, sample count, attachment count, whether a depth
+    // attachment is present) had nothing keeping the two in step. A
+    // pipeline/render-pass mismatch is undefined behaviour; on Adreno 619 it
+    // surfaces as VK_ERROR_DEVICE_LOST at the following vkQueueSubmit.
+    VkRenderPass currentRenderPass = VK_NULL_HANDLE;
+
     // ---- GL 4.3 ARB_invalidate_subdata: per-attachment discard flags ----
     // Set by glInvalidateFramebuffer/glInvalidateSubFramebuffer via
     // backend_set_invalidate_attachments. Applied to storeOp in the NEXT
@@ -172,6 +192,10 @@ struct EncoderState {
 EncoderState& encoder() {
     static EncoderState s;
     return s;
+}
+
+VkRenderPass current_compat_render_pass() {
+    return encoder().currentRenderPass;
 }
 
 /*
@@ -573,6 +597,11 @@ void set_fbo_attachment_tex_ids(GLuint* color_tex_ids, int color_count,
     for (int i = 0; i < 8; ++i) e.fboColorTexIds[i] = 0;
     e.fboColorTexCount = 0;
     e.fboDepthTexId = 0;
+    // Drop the pass handle as well: recovery destroys every cached
+    // VkRenderPass, and a rebuilt pass can be handed the same address. A stale
+    // handle here would compile a pipeline against a pass that no longer
+    // exists, and would collide in the pipeline cache key.
+    e.currentRenderPass = VK_NULL_HANDLE;
 
     int n = color_count > 8 ? 8 : (color_count < 0 ? 0 : color_count);
     for (int i = 0; i < n; ++i) {
@@ -1123,6 +1152,7 @@ void begin_render_pass(VkImageView* color_views, int color_count,
         fprintf(stderr,"\n");
     }
     if (b->dynamicRenderingSupported && b->cmdBeginRendering) {
+        e.currentRenderPass = VK_NULL_HANDLE;  // dynamic rendering: no pass object
         reinterpret_cast<PFN_vkCmdBeginRenderingKHR>(b->cmdBeginRendering)(b->commandBuffer, &ri);
     } else {
         // ---- 传统 VkRenderPass / VkFramebuffer 路径 ----
@@ -1147,9 +1177,14 @@ void begin_render_pass(VkImageView* color_views, int color_count,
         // 颜色附件格式未知（用户 FBO，view 不在 swapchain 里）时无法建 pass。
         // 传统 render pass 必须知道格式，这与动态渲染不同 —— 那里格式由
         // VkImageView 自身携带。这里从纹理表惰性解析一次。
-        if (e.colorCount > 0 && colorFmts[0] == VK_FORMAT_UNDEFINED) {
+        // Per-attachment, not "only when attachment 0 is unknown": a mixed FBO
+        // (attachment 0 on the swapchain, attachment 1 a texture) used to leave
+        // attachment 1 UNDEFINED, and an attachment with VK_FORMAT_UNDEFINED
+        // makes the pass illegal and incompatible with every pipeline.
+        if (e.colorCount > 0) {
             auto& tbl0 = texture_table();
             for (int i = 0; i < e.colorCount; ++i) {
+                if (colorFmts[i] != VK_FORMAT_UNDEFINED) continue;
                 GLuint tid = (i < e.fboColorTexCount) ? e.fboColorTexIds[i] : 0;
                 if (tid == 0) continue;
                 auto it0 = tbl0.find(tid);
@@ -1161,6 +1196,10 @@ void begin_render_pass(VkImageView* color_views, int color_count,
             VK_SAMPLE_COUNT_1_BIT, colorLoad, colorStore,
             e.depthView ? depthAttach.loadOp : VK_ATTACHMENT_LOAD_OP_LOAD,
             e.depthView ? depthAttach.storeOp : VK_ATTACHMENT_STORE_OP_STORE);
+        // Publish the handle this pass is begun with, so the pipeline can be
+        // compiled against this very pass (MobileGL model) instead of a
+        // separately keyed canonical one.
+        e.currentRenderPass = compatPass;
         VkFramebuffer fb = mithril_vk_framebuffer_for(compatPass, e.colorViews, e.colorCount,
                                                      e.depthView,
                                                      (uint32_t)e.width, (uint32_t)e.height);

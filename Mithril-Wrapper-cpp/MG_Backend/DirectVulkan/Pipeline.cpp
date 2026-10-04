@@ -7,7 +7,8 @@
 #include "Device.h"
 #include "Resources.h"
 #include "DescriptorSet.h"
-#include "RenderPassCompat.h"   // 无 VK_KHR_dynamic_rendering 时的传统 VkRenderPass
+#include "RenderPassCompat.h"
+#include "CommandStream.h"   // current_compat_render_pass()   // 无 VK_KHR_dynamic_rendering 时的传统 VkRenderPass
 #include "../Backend.h"
 #include "../../MG_Impl/Log.h"
 // FIX (root cause AF - Primitive Restart): 读取 g_state->primitiveRestart /
@@ -15,6 +16,7 @@
 // 纳入 hash_signature 缓存键。深度对照 MobileGL VulkanRenderer.cpp:3861-3877。
 #include "../../MG_State/State.h"
 
+#include <cstdint>   // uintptr_t (render pass handle mixed into the cache key)
 #include <cstring>
 #include <vector>
 
@@ -480,6 +482,17 @@ VkPipeline get_or_create_pipeline(GLuint program,
                                   blend_src_alpha, blend_dst_alpha,
                                   color_write_mask, gl_primitive_mode,
                                   is_default_fbo);
+    // Classic path: the pipeline is now tied to one concrete VkRenderPass, so
+    // that handle must be part of the cache key — otherwise two passes sharing
+    // the same GL state but different attachment signatures would reuse one
+    // pipeline and reintroduce the mismatch fixed above. Mirrors MobileGL's
+    // PipelineFactory, which hashes payload.renderPass into the key.
+    // When no classic pass is active the handle is null and nothing is mixed
+    // in; the pipeline then falls back to the canonical pass, whose signature
+    // (formats / depth / sample count) hash_signature already covers.
+    if (VkRenderPass sigPass = mithril::vk::current_compat_render_pass()) {
+        sig ^= (uint64_t)(uintptr_t)sigPass * 0x9E3779B97F4A7C15ull;
+    }
     auto it = pr.pipelines.find(sig);
     if (it != pr.pipelines.end() && it->second != VK_NULL_HANDLE) return it->second;
 
@@ -936,11 +949,20 @@ VkPipeline get_or_create_pipeline(GLuint program,
     // format 与 sampleCount 一致。
     VkRenderPass compatPass = VK_NULL_HANDLE;
     if (!b->dynamicRenderingSupported) {
-        compatPass = mithril_vk_render_pass_for(colorFmts, color_count, depth_format,
-                                                ms.rasterizationSamples,
-                                                nullptr, nullptr,
-                                                VK_ATTACHMENT_LOAD_OP_LOAD,
-                                                VK_ATTACHMENT_STORE_OP_STORE);
+        // MobileGL model: compile against the SAME VkRenderPass handle that
+        // vkCmdBeginRenderPass will use. The canonical pass below is only a
+        // fallback for a pipeline created outside any pass; using it while
+        // drawing inside a separately keyed pass left format / sample count /
+        // attachment count / depth presence free to diverge, and a pipeline
+        // that does not match the active render pass is undefined behaviour.
+        compatPass = mithril::vk::current_compat_render_pass();
+        if (compatPass == VK_NULL_HANDLE) {
+            compatPass = mithril_vk_render_pass_for(colorFmts, color_count, depth_format,
+                                                    ms.rasterizationSamples,
+                                                    nullptr, nullptr,
+                                                    VK_ATTACHMENT_LOAD_OP_LOAD,
+                                                    VK_ATTACHMENT_STORE_OP_STORE);
+        }
         if (compatPass == VK_NULL_HANDLE) {
             MITHRIL_LOG_WARN("vk", "no compatible VkRenderPass for this attachment "
                                    "signature (%d color, depth=%u) — skipping pipeline",

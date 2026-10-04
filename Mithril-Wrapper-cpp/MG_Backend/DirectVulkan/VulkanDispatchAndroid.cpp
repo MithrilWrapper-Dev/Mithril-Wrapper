@@ -566,6 +566,7 @@ void ensure_library() {
     const char* driver_dir = getenv("DRIVER_PATH");
     const char* explicit_path = getenv("MITHRIL_VULKAN_LIBRARY");
     const char* turnip = getenv("MITHRIL_TURNIP");
+    const char* system_driver = getenv("VULKAN_DRIVER_SYSTEM");
 
     // Which driver to use is the launcher's decision, not ours. It exposes a
     // "use the system Vulkan driver" switch and a "use another driver" switch,
@@ -579,15 +580,33 @@ void ensure_library() {
     // system driver was still pushed down the custom-driver path. It is now the
     // same predicate that builds the candidate list, so the two can no longer
     // disagree.
-    const bool turnip_on = turnip && (turnip[0] == '1' || turnip[0] == 'y' ||
-                                      turnip[0] == 'Y' || turnip[0] == 't' ||
-                                      turnip[0] == 'T');
+    // FCL drives the very same switch through VULKAN_DRIVER_SYSTEM. Its bridge
+    // reads it as "present at all, whatever the value":
+    //
+    //     if (getenv("VULKAN_DRIVER_SYSTEM") == NULL && api_level >= 28)
+    //         loadTurnipVulkan();
+    //     else
+    //         dlopen("libvulkan.so");
+    //
+    // So the variable merely being there means the launcher picked the system
+    // driver, and it has to win: MITHRIL_TURNIP only says a Turnip plugin is
+    // installed, it does not override the launcher's own switch. FCL sets both
+    // at once when the plugin is present while the switch points at the system
+    // driver, which is exactly the combination observed in the field - and it
+    // made "use the system Vulkan driver" runs load Turnip anyway.
+    const bool force_system = system_driver && system_driver[0];
+
+    const bool turnip_on = !force_system && turnip &&
+                           (turnip[0] == '1' || turnip[0] == 'y' ||
+                            turnip[0] == 'Y' || turnip[0] == 't' ||
+                            turnip[0] == 'T');
     const bool explicit_driver = explicit_path && explicit_path[0];
     const bool driver_requested = explicit_driver || turnip_on;
 
     fprintf(stderr, "[mithril] vk-dispatch: launcher choice: %s\n",
-            explicit_driver ? "explicit driver"
-                            : (turnip_on ? "turnip" : "system driver"));
+            force_system ? "system driver (VULKAN_DRIVER_SYSTEM set)"
+                         : (explicit_driver ? "explicit driver"
+                                            : (turnip_on ? "turnip" : "system driver")));
 
     log_dir(driver_dir);
 

@@ -580,33 +580,47 @@ void ensure_library() {
     // system driver was still pushed down the custom-driver path. It is now the
     // same predicate that builds the candidate list, so the two can no longer
     // disagree.
-    // FCL drives the very same switch through VULKAN_DRIVER_SYSTEM. Its bridge
-    // reads it as "present at all, whatever the value":
+    // VULKAN_DRIVER_SYSTEM does NOT mean "the launcher picked the system
+    // driver". Two field runs on the same device show the opposite pairing:
     //
-    //     if (getenv("VULKAN_DRIVER_SYSTEM") == NULL && api_level >= 28)
-    //         loadTurnipVulkan();
-    //     else
-    //         dlopen("libvulkan.so");
+    //   launcher switch = Turnip   -> MITHRIL_TURNIP=1, VULKAN_DRIVER_SYSTEM=1
+    //   launcher switch = system   -> neither variable set
     //
-    // So the variable merely being there means the launcher picked the system
-    // driver, and it has to win: MITHRIL_TURNIP only says a Turnip plugin is
-    // installed, it does not override the launcher's own switch. FCL sets both
-    // at once when the plugin is present while the switch points at the system
-    // driver, which is exactly the combination observed in the field - and it
-    // made "use the system Vulkan driver" runs load Turnip anyway.
-    const bool force_system = system_driver && system_driver[0];
+    // So the variable only says a system driver is *available*; FCL exports it
+    // even while the switch points at Turnip. Letting it win here made every
+    // Turnip run silently load the system driver instead, which is the one
+    // thing this code must never do: the choice belongs to the launcher.
+    //
+    // Precedence is therefore:
+    //   1. MITHRIL_TURNIP set to an enabling value          -> Turnip
+    //   2. MITHRIL_TURNIP set to a disabling value          -> system driver
+    //   3. MITHRIL_TURNIP absent, VULKAN_DRIVER_SYSTEM set   -> system driver
+    //   4. neither set                                       -> system driver
+    const bool turnip_explicit_on = turnip &&
+                                    (turnip[0] == '1' || turnip[0] == 'y' ||
+                                     turnip[0] == 'Y' || turnip[0] == 't' ||
+                                     turnip[0] == 'T');
+    const bool turnip_explicit_off = turnip &&
+                                     (turnip[0] == '0' || turnip[0] == 'n' ||
+                                      turnip[0] == 'N' || turnip[0] == 'f' ||
+                                      turnip[0] == 'F');
+    const bool force_system = !turnip_explicit_on &&
+                              (turnip_explicit_off ||
+                               (system_driver && system_driver[0]));
 
-    const bool turnip_on = !force_system && turnip &&
-                           (turnip[0] == '1' || turnip[0] == 'y' ||
-                            turnip[0] == 'Y' || turnip[0] == 't' ||
-                            turnip[0] == 'T');
+    const bool turnip_on = turnip_explicit_on;
     const bool explicit_driver = explicit_path && explicit_path[0];
     const bool driver_requested = explicit_driver || turnip_on;
 
-    fprintf(stderr, "[mithril] vk-dispatch: launcher choice: %s\n",
-            force_system ? "system driver (VULKAN_DRIVER_SYSTEM set)"
-                         : (explicit_driver ? "explicit driver"
-                                            : (turnip_on ? "turnip" : "system driver")));
+    // Say which variable produced the choice: "system driver" alone is useless
+    // when a launcher sets both, which is the exact case that was mis-resolved.
+    const char* choice_desc =
+        turnip_on        ? "turnip (MITHRIL_TURNIP)"
+      : explicit_driver  ? "explicit driver (MITHRIL_VULKAN_LIBRARY)"
+      : turnip_explicit_off ? "system driver (MITHRIL_TURNIP disabled)"
+      : (system_driver && system_driver[0]) ? "system driver (VULKAN_DRIVER_SYSTEM)"
+      : "system driver (default)";
+    fprintf(stderr, "[mithril] vk-dispatch: launcher choice: %s\n", choice_desc);
 
     log_dir(driver_dir);
 

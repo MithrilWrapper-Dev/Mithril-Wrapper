@@ -1482,6 +1482,12 @@ VKAPI_ATTR void VKAPI_CALL vkDestroyImage(VkDevice device, VkImage image, const 
     if (!fp) { return; }
     fp(device, image, pAllocator);
 }
+VKAPI_ATTR void VKAPI_CALL vkDestroyRenderPass(VkDevice device, VkRenderPass renderPass, const VkAllocationCallbacks* pAllocator) {
+    static PFN_vkDestroyRenderPass fp = nullptr;
+    if (!fp) fp = (PFN_vkDestroyRenderPass)resolve("vkDestroyRenderPass");
+    if (!fp) { return; }
+    fp(device, renderPass, pAllocator);
+}
 VKAPI_ATTR void VKAPI_CALL vkDestroyImageView(VkDevice device, VkImageView imageView, const VkAllocationCallbacks* pAllocator) {
     static PFN_vkDestroyImageView fp = nullptr;
     if (!fp) fp = (PFN_vkDestroyImageView)resolve("vkDestroyImageView");

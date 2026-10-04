@@ -1187,6 +1187,24 @@ void begin_render_pass(VkImageView* color_views, int color_count,
                     if (e.colorViews[i] == e.activeSwapchain->views[k]) { isSwapView = true; break; }
                 }
             }
+            // FIX (GPU fault on every frame with draws): FBO 0 carries NO color
+            // texture attachments — set_fbo_attachment_tex_ids() is documented as
+            // "for swapchain rendering (FBO 0) the GL layer does NOT call this",
+            // so e.fboColorTexCount == 0 is an unambiguous marker for "this pass
+            // targets the default framebuffer == the swapchain".
+            //
+            // The identity test above alone is not enough: the view handle comes
+            // from g_state->eglDefaultColor, which can belong to a swapchain that
+            // was destroyed and rebuilt during deviceLost recovery. When the
+            // handles do not match, the format silently stays UNDEFINED and the
+            // classic VkRenderPass is created with an UNDEFINED attachment —
+            // incompatible with the pipeline, which is compiled against the real
+            // format. That is what the log shows: swapFmt=44 (BGRA8) and a valid
+            // curImg, yet fmt0=0 with view=1 fboColorTexCount=0 tid=0.
+            if (!isSwapView && e.activeSwapchain && e.colorViews[i] &&
+                e.fboColorTexCount == 0) {
+                isSwapView = true;
+            }
             colorFmts[i] = isSwapView ? e.activeSwapchain->format : VK_FORMAT_UNDEFINED;
         }
         // 颜色附件格式未知（用户 FBO，view 不在 swapchain 里）时无法建 pass。

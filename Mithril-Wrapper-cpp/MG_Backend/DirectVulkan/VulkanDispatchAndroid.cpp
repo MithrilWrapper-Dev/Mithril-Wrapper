@@ -459,6 +459,73 @@ void* try_load(const char* path, const char* driver_dir) {
 static const int kMaxCandidates = 12;
 static const int kLoaderSlot = kMaxCandidates - 3;
 
+// Does the platform loader already serve a Mesa/freedreno (Turnip) driver?
+//
+// This is how ANGLE drives Turnip, and why it works on every version: the
+// application never opens a driver by name. It opens libvulkan.so and lets the
+// loader - plus whatever the launcher or adrenotools installed in front of it -
+// decide which driver backs it. WSI then comes from the loader, so the render
+// path is the ordinary one with a real swapchain and nothing has to be
+// presented offscreen.
+//
+// We can only take that route when the loader really is serving Turnip, which
+// cannot be assumed: hw_get_module searches fixed system directories and never
+// looks inside an app's library directory. So build a throwaway instance and
+// read the physical device name. It is the only reliable way to tell the two
+// drivers apart, because the GPU both of them report is the same Adreno.
+static bool device_name_is_turnip(const char* name) {
+    if (!name) return false;
+    return strstr(name, "Turnip") != nullptr || strstr(name, "turnip") != nullptr ||
+           strstr(name, "freedreno") != nullptr;
+}
+
+static bool loader_reports_turnip(PFN_vkGetInstanceProcAddr gipa) {
+    if (!gipa) return false;
+    auto* create_instance =
+        reinterpret_cast<PFN_vkCreateInstance>(gipa(VK_NULL_HANDLE, "vkCreateInstance"));
+    if (!create_instance) return false;
+
+    VkApplicationInfo ai{};
+    ai.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+    ai.apiVersion = VK_API_VERSION_1_0;
+    VkInstanceCreateInfo ci{};
+    ci.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+    ci.pApplicationInfo = &ai;
+
+    VkInstance inst = VK_NULL_HANDLE;
+    VkResult r = create_instance(&ci, nullptr, &inst);
+    if (r != VK_SUCCESS || inst == VK_NULL_HANDLE) {
+        fprintf(stderr, "[mithril] vk-dispatch: loader probe: vkCreateInstance failed (%d)\n",
+                static_cast<int>(r));
+        return false;
+    }
+
+    auto* enum_devs = reinterpret_cast<PFN_vkEnumeratePhysicalDevices>(
+        gipa(inst, "vkEnumeratePhysicalDevices"));
+    auto* get_props = reinterpret_cast<PFN_vkGetPhysicalDeviceProperties>(
+        gipa(inst, "vkGetPhysicalDeviceProperties"));
+    auto* destroy_instance =
+        reinterpret_cast<PFN_vkDestroyInstance>(gipa(inst, "vkDestroyInstance"));
+
+    bool found = false;
+    uint32_t count = 0;
+    if (enum_devs && get_props && enum_devs(inst, &count, nullptr) == VK_SUCCESS && count > 0 &&
+        count <= 16) {
+        std::vector<VkPhysicalDevice> devs(count);
+        if (enum_devs(inst, &count, devs.data()) == VK_SUCCESS) {
+            for (uint32_t i = 0; i < count; ++i) {
+                VkPhysicalDeviceProperties props{};
+                get_props(devs[i], &props);
+                fprintf(stderr, "[mithril] vk-dispatch: loader probe device %u: %s\n", i,
+                        props.deviceName);
+                if (device_name_is_turnip(props.deviceName)) found = true;
+            }
+        }
+    }
+    if (destroy_instance) destroy_instance(inst, nullptr);
+    return found;
+}
+
 void add_candidate(const char* cands[], int& n, const char* dir, const char* name) {
     if (n >= kLoaderSlot) return;
     if (!name || !name[0]) return;
@@ -679,8 +746,28 @@ void ensure_library() {
     // so it goes first. It has no WSI, but that is not fatal: create_swapchain
     // detects the missing VK_KHR_swapchain and switches to the offscreen
     // present path, which is exactly how Zink drives a Mesa HAL driver.
-    void* driver_handle = nullptr;
+    // Prefer the loader whenever it already serves the requested driver. Only
+    // the loader has WSI, so this is the one route that ends in a real
+    // swapchain instead of the offscreen present path.
+    void* probe_handle = nullptr;
+    bool loader_has_turnip = false;
     if (driver_requested) {
+        for (int i = kLoaderSlot; i < kMaxCandidates; ++i) {
+            if (!cands[i]) continue;
+            probe_handle = try_load(cands[i], driver_dir);
+            if (probe_handle) break;
+        }
+        if (probe_handle) {
+            auto* probe_gipa =
+                reinterpret_cast<PFN_vkGetInstanceProcAddr>(dlsym(probe_handle, "vkGetInstanceProcAddr"));
+            loader_has_turnip = loader_reports_turnip(probe_gipa);
+            fprintf(stderr, "[mithril] vk-dispatch: platform loader serves turnip: %s\n",
+                    loader_has_turnip ? "yes" : "no");
+        }
+    }
+
+    void* driver_handle = nullptr;
+    if (driver_requested && !loader_has_turnip) {
         for (int i = 0; i < n && i < kLoaderSlot; ++i) {
             if (!cands[i]) continue;
             driver_handle = try_load(cands[i], driver_dir);
@@ -694,12 +781,13 @@ void ensure_library() {
 
     // Only reached when the requested driver could not be driven directly.
     void* hook_loader = nullptr;
-    if (!driver_handle && driver_requested) {
+    if (!driver_handle && driver_requested && !loader_has_turnip) {
         const char* name = explicit_driver ? explicit_path : "libvulkan_freedreno.so";
         hook_loader = try_hook_route(driver_dir, name);
     }
 
-    void* loader_handle = hook_loader;
+    // The probe already opened the loader; reuse it instead of opening it twice.
+    void* loader_handle = hook_loader ? hook_loader : probe_handle;
     for (int i = loader_handle ? kMaxCandidates : kLoaderSlot; i < kMaxCandidates; ++i) {
         if (!cands[i]) continue;
         loader_handle = try_load(cands[i], driver_dir);

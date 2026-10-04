@@ -821,6 +821,17 @@ void begin_render_pass(VkImageView* color_views, int color_count,
                 break;
             }
         }
+        // Same stale-handle trap as the format lookup further down: after a
+        // deviceLost rebuild the bound view can belong to the PREVIOUS
+        // swapchain, so the identity test above fails and the render area is
+        // never clamped. FBO 0 carries no colour texture attachments
+        // (set_fbo_attachment_tex_ids is never called for it), so
+        // fboColorTexCount == 0 is an unambiguous marker for "targeting the
+        // default framebuffer == the swapchain".
+        if (!swapchainBound && e.fboColorTexCount == 0 && e.colorCount > 0 &&
+            e.colorViews[0] != VK_NULL_HANDLE) {
+            swapchainBound = true;
+        }
         if (swapchainBound) {
             // Primary clamp: swapchain creation-time extent (VkImage size).
             if (e.width > sc->width) e.width = sc->width;
@@ -1019,6 +1030,19 @@ void begin_render_pass(VkImageView* color_views, int color_count,
     // same via the acquire->attachment barrier using oldLayout=UNDEFINED
     // (swapchain_acquire_color deliberately resets currentColorLayout to
     // UNDEFINED on every acquire, since post-present contents are undefined).
+    // Bounds-safe accessor for the swapchain's CURRENT colour view.
+    // currentImage is -1 before an acquire and through the whole deviceLost
+    // recovery window (the log shows hundreds of "no acquired swapchain"
+    // frames). Indexing views[] with it is an out-of-bounds read — as an int
+    // it converts to a huge size_t for std::vector::operator[].
+    VkImageView swapCurColorView = VK_NULL_HANDLE;
+    if (e.activeSwapchain) {
+        Swapchain* scv = e.activeSwapchain;
+        if (scv->currentImage >= 0 && scv->currentImage < (int)scv->views.size())
+            swapCurColorView = scv->views[scv->currentImage];
+    }
+    const bool swapCurColorValid = (swapCurColorView != VK_NULL_HANDLE);
+
     VkRenderingAttachmentInfoKHR colorAttachs[8] = {};
     for (int i = 0; i < e.colorCount; ++i) {
         colorAttachs[i].sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO_KHR;
@@ -1034,8 +1058,8 @@ void begin_render_pass(VkImageView* color_views, int color_count,
         if (e.loadClear) {
             colorAttachs[i].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
         } else if (swapchainColorWasUndefined &&
-                   e.activeSwapchain &&
-                   e.colorViews[i] == e.activeSwapchain->views[e.activeSwapchain->currentImage]) {
+                   swapCurColorValid &&
+                   e.colorViews[i] == swapCurColorView) {
             colorAttachs[i].loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
         } else {
             colorAttachs[i].loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
@@ -1049,8 +1073,8 @@ void begin_render_pass(VkImageView* color_views, int color_count,
         // 根因 G: 若该 attachment 是 swapchain image 且格式无 alpha，强制 alpha=1.0
         // （对标 MobileGL ResolveColorClearAlpha），防止合成器视窗口透明 → 黑屏。
         bool attachHasAlpha = true;
-        if (e.activeSwapchain &&
-            e.colorViews[i] == e.activeSwapchain->views[e.activeSwapchain->currentImage]) {
+        if (swapCurColorValid && e.colorViews[i] == swapCurColorView &&
+            e.activeSwapchain) {
             attachHasAlpha = format_has_alpha(e.activeSwapchain->format);
         }
         colorAttachs[i].clearValue.color.float32[3] = attachHasAlpha ? e.clearColor[3] : 1.0f;
@@ -1254,17 +1278,69 @@ void begin_render_pass(VkImageView* color_views, int color_count,
                 }
             }
         }
+        // ---- Consistency guards (GPU-fault prevention) --------------------
+        // A) COLOUR: an UNDEFINED colour format makes the pass illegal and
+        //    incompatible with every pipeline compiled against a real format.
+        //    Never build it — drop the pass loudly instead of faulting the GPU.
+        for (int i = 0; i < e.colorCount; ++i) {
+            if (colorFmts[i] == VK_FORMAT_UNDEFINED) {
+                static uint32_t illN = 0;
+                if (illN < 8) {
+                    ++illN;
+                    MITHRIL_LOG_WARN("vk", "classic pass: attachment %d format still "
+                                      "UNDEFINED after resolution (swapFmt=%d curImg=%d "
+                                      "fboColorTexCount=%d) — refusing to create an illegal "
+                                      "pass; draws in this pass are dropped",
+                                      i, e.activeSwapchain ? (int)e.activeSwapchain->format : -1,
+                                      e.activeSwapchain ? e.activeSwapchain->currentImage : -99,
+                                      e.fboColorTexCount);
+                }
+                e.currentRenderPass = VK_NULL_HANDLE;
+                return;
+            }
+        }
+        // B) DEPTH: mithril_vk_render_pass_for only adds a depth attachment when
+        //    the depth FORMAT is known, but mithril_vk_framebuffer_for appends
+        //    depth_view unconditionally. depthView != null with
+        //    depthFormat == UNDEFINED therefore yields a pass with N attachments
+        //    and a framebuffer with N+1 — incompatible, and vkCmdBeginRenderPass
+        //    then faults the GPU. The log shows this live (depthFmt=0 depthView=1).
+        //    Same stale-handle root cause as the colour format: after a
+        //    deviceLost rebuild e.depthView no longer equals sc->depthView, and
+        //    FBO 0 has fboDepthTexId == 0 so the texture table lookup never runs.
+        VkImageView classicDepthView = e.depthView;
+        if (classicDepthView != VK_NULL_HANDLE && e.depthFormat == VK_FORMAT_UNDEFINED) {
+            if (e.fboColorTexCount == 0 && e.activeSwapchain) {
+                // FBO 0: the only depth we ever create is the swapchain's
+                // D32_SFLOAT_S8_UINT, so assume that instead of losing depth.
+                e.depthFormat = VK_FORMAT_D32_SFLOAT_S8_UINT;
+            } else {
+                // Format genuinely unknown: drop depth from BOTH the pass and the
+                // framebuffer so the two stay consistent.
+                classicDepthView = VK_NULL_HANDLE;
+            }
+            static bool warnedDepth = false;
+            if (!warnedDepth) {
+                warnedDepth = true;
+                MITHRIL_LOG_WARN("vk", "classic pass: depth view present but format "
+                                  "unresolved (fboColorTexCount=%d) -> %s",
+                                  e.fboColorTexCount,
+                                  classicDepthView ? "assuming D32_SFLOAT_S8_UINT"
+                                                   : "depth attachment dropped");
+            }
+        }
         VkRenderPass compatPass = mithril_vk_render_pass_for(
-            colorFmts, e.colorCount, e.depthView ? e.depthFormat : VK_FORMAT_UNDEFINED,
+            colorFmts, e.colorCount,
+            classicDepthView ? e.depthFormat : VK_FORMAT_UNDEFINED,
             VK_SAMPLE_COUNT_1_BIT, colorLoad, colorStore,
-            e.depthView ? depthAttach.loadOp : VK_ATTACHMENT_LOAD_OP_LOAD,
-            e.depthView ? depthAttach.storeOp : VK_ATTACHMENT_STORE_OP_STORE);
+            classicDepthView ? depthAttach.loadOp : VK_ATTACHMENT_LOAD_OP_LOAD,
+            classicDepthView ? depthAttach.storeOp : VK_ATTACHMENT_STORE_OP_STORE);
         // Publish the handle this pass is begun with, so the pipeline can be
         // compiled against this very pass (MobileGL model) instead of a
         // separately keyed canonical one.
         e.currentRenderPass = compatPass;
         VkFramebuffer fb = mithril_vk_framebuffer_for(compatPass, e.colorViews, e.colorCount,
-                                                     e.depthView,
+                                                     classicDepthView,
                                                      (uint32_t)e.width, (uint32_t)e.height);
         if (compatPass == VK_NULL_HANDLE || fb == VK_NULL_HANDLE) {
             static bool warnedClassic = false;

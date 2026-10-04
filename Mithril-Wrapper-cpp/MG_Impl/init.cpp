@@ -7,6 +7,9 @@
 // proc_init() owns it on the headless path.
 #include "includes.h"
 
+// getenv/setenv for the launch-environment defaults applied below.
+#include <stdlib.h>
+
 namespace {
 // Runs from __DATA,__mod_init_func while dyld is still loading the image.
 //
@@ -36,6 +39,40 @@ namespace {
 struct static_block_t {
     static_block_t() {
         MITHRIL_LOG_WARN("init", "Build commit: " MITHRIL_COMMIT_ID);
+
+        // Fill in launch-environment values that the host launcher reads
+        // without a null check.
+        //
+        // FCL's EGL bridge (FCL/src/main/jni/ctxbridges/gl_bridge.c) builds the
+        // context like this:
+        //
+        //     strncmp(getenv("POJAV_RENDERER"), "opengles3_desktopgl", 19)
+        //     ...
+        //     int libgl_es = strtol(getenv("LIBGL_ES"), NULL, 0);
+        //     const EGLint attribs[] = {EGL_CONTEXT_CLIENT_VERSION, libgl_es, EGL_NONE};
+        //     bundle->context = eglCreateContext_p(..., attribs);
+        //
+        // Neither getenv() result is checked. A self-contained renderer plugin
+        // like this one is launched with POJAV_RENDERER set but with no
+        // LIBGL_ES at all — the failing run's environment dump lists
+        // POJAV_RENDERER=opengles3 and no LIBGL_ES — so strtol() is handed
+        // NULL and faults inside bionic. The JVM dies with
+        //
+        //   SIGSEGV (0xb) ... C [libc.so] StrToI<long, ...>(char const*, char**, int)
+        //
+        // and, because the call sits between eglBindAPI and eglCreateContext,
+        // the last thing on the log is "EGLBridge: Binding to OpenGL ES" with
+        // no eglCreateContext trace after it — exactly what the device log
+        // shows. Renderers that reach the launcher through the OSMesa/gallium
+        // bridge (Zink, MobileGL) never execute this code, which is why they
+        // are unaffected.
+        //
+        // setenv() here, while the image loads, is early enough: the bridge
+        // runs long afterwards on the same process. Both are only written when
+        // absent, so a launcher that does define them keeps its own values.
+        if (!getenv("LIBGL_ES")) setenv("LIBGL_ES", "3", 0);
+        if (!getenv("POJAV_RENDERER")) setenv("POJAV_RENDERER", "opengles3", 0);
+
         ::mithril::state_init();
     }
 };

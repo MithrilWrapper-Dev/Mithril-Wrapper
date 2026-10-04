@@ -1908,7 +1908,13 @@ VkPipeline bq_dr_pipeline(VkFormat dst_fmt) {
     rci.colorAttachmentCount = 1; rci.pColorAttachmentFormats = &dst_fmt;
     VkRenderPass compatRP = VK_NULL_HANDLE;
     if (!b->dynamicRenderingSupported) {
-        compatRP = get_canonical_render_pass(&dst_fmt, 1, VK_FORMAT_UNDEFINED, false);
+        // 与 Pipeline.cpp 保持一致：用「规范」pass（color load/store 传 nullptr
+        // → LOAD/STORE，depth 无附件时 load/store 被忽略）。
+        compatRP = mithril_vk_render_pass_for(&dst_fmt, 1, VK_FORMAT_UNDEFINED,
+                                              VK_SAMPLE_COUNT_1_BIT,
+                                              nullptr, nullptr,
+                                              VK_ATTACHMENT_LOAD_OP_LOAD,
+                                              VK_ATTACHMENT_STORE_OP_STORE);
         if (compatRP == VK_NULL_HANDLE) {
             MITHRIL_LOG_WARN("blit-quad", "canonical render pass unavailable fmt=%d",
                              (int)dst_fmt);

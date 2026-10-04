@@ -567,14 +567,36 @@ void ensure_library() {
     const char* explicit_path = getenv("MITHRIL_VULKAN_LIBRARY");
     const char* turnip = getenv("MITHRIL_TURNIP");
 
+    // Which driver to use is the launcher's decision, not ours. It exposes a
+    // "use the system Vulkan driver" switch and a "use another driver" switch,
+    // and expresses the result through MITHRIL_VULKAN_LIBRARY (an explicitly
+    // named driver) or MITHRIL_TURNIP. Our job is only to make either choice
+    // work - not to second-guess it.
+    //
+    // "Turnip requested" has to mean an actual enablement. The test that used
+    // to gate the driver/hook paths was `turnip && turnip[0]`, which is also
+    // true for MITHRIL_TURNIP=0 - so a launcher that had explicitly chosen the
+    // system driver was still pushed down the custom-driver path. It is now the
+    // same predicate that builds the candidate list, so the two can no longer
+    // disagree.
+    const bool turnip_on = turnip && (turnip[0] == '1' || turnip[0] == 'y' ||
+                                      turnip[0] == 'Y' || turnip[0] == 't' ||
+                                      turnip[0] == 'T');
+    const bool explicit_driver = explicit_path && explicit_path[0];
+    const bool driver_requested = explicit_driver || turnip_on;
+
+    fprintf(stderr, "[mithril] vk-dispatch: launcher choice: %s\n",
+            explicit_driver ? "explicit driver"
+                            : (turnip_on ? "turnip" : "system driver"));
+
     log_dir(driver_dir);
 
     const char* cands[kMaxCandidates];
     int n = 0;
 
-    if (explicit_path && explicit_path[0]) {
+    if (explicit_driver) {
         add_candidate(cands, n, driver_dir, explicit_path);
-    } else if (turnip && (turnip[0] == '1' || turnip[0] == 'y' || turnip[0] == 'Y')) {
+    } else if (turnip_on) {
         add_candidate(cands, n, driver_dir, "libvulkan_freedreno.so");
         add_candidate(cands, n, driver_dir, "libvulkan_adreno.so");
         add_candidate(cands, n, driver_dir, "vulkan.adreno.so");
@@ -625,7 +647,7 @@ void ensure_library() {
     // detects the missing VK_KHR_swapchain and switches to the offscreen
     // present path, which is exactly how Zink drives a Mesa HAL driver.
     void* driver_handle = nullptr;
-    if (explicit_path || (turnip && turnip[0])) {
+    if (driver_requested) {
         for (int i = 0; i < n && i < kLoaderSlot; ++i) {
             if (!cands[i]) continue;
             driver_handle = try_load(cands[i], driver_dir);
@@ -639,9 +661,8 @@ void ensure_library() {
 
     // Only reached when the requested driver could not be driven directly.
     void* hook_loader = nullptr;
-    if (!driver_handle && (explicit_path || (turnip && turnip[0]))) {
-        const char* name = explicit_path && explicit_path[0] ? explicit_path
-                                                             : "libvulkan_freedreno.so";
+    if (!driver_handle && driver_requested) {
+        const char* name = explicit_driver ? explicit_path : "libvulkan_freedreno.so";
         hook_loader = try_hook_route(driver_dir, name);
     }
 

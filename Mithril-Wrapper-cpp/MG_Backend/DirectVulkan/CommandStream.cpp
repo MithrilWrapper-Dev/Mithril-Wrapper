@@ -1471,12 +1471,27 @@ void begin_render_pass(VkImageView* color_views, int color_count,
         // —— 对 UNDEFINED 图像做 LOAD 既非法又毫无意义）。
         VkImageLayout colorInitial[8] = {};
         for (int i = 0; i < e.colorCount; ++i) {
-            bool isSwapView = (e.activeSwapchain &&
-                               colorFmts[i] == e.activeSwapchain->format &&
-                               e.fboColorTexCount == 0);
-            if (!isSwapView && e.activeSwapchain) {
-                for (size_t k = 0; k < e.activeSwapchain->views.size(); ++k) {
-                    if (e.colorViews[i] == e.activeSwapchain->views[k]) { isSwapView = true; break; }
+            // 必须与上方 barrier 用的 swapchainBound 谓词完全一致。
+            //
+            // 旧代码用的是另一套判定：格式相等 + fboColorTexCount==0，或者
+            // "视图等于交换链 views 数组中的任意一个"。它与 barrier 的判定
+            // （等于 views[currentImage]，或 FBO 0 标记）在两处会分叉：
+            //   * 匹配到非当前图时，isSwapView 为真但 barrier 没跑过 ——
+            //     于是把 currentColorLayout（描述的是「当前」那张图）当成
+            //     这一张图的实际布局写进 pass；
+            //   * 格式不等时（例如混合 FBO 的附件）isSwapView 为假，即使它
+            //     确实是交换链当前图。
+            // 这是「一边说绑了、另一边说没绑」的老问题的又一个实例：barrier
+            // 与 pass 对同一件事给出不同答案，tiler 从错误状态做 tile load。
+            bool isSwapView = false;
+            if (e.activeSwapchain) {
+                if (e.fboColorTexCount == 0 && e.colorCount > 0) {
+                    // 默认帧缓冲：无颜色纹理附件即意味着目标是交换链。
+                    isSwapView = true;
+                } else if (e.activeSwapchain->currentImage >= 0 &&
+                           e.activeSwapchain->currentImage < (int)e.activeSwapchain->views.size() &&
+                           e.colorViews[i] == e.activeSwapchain->views[e.activeSwapchain->currentImage]) {
+                    isSwapView = true;
                 }
             }
             VkImageLayout actual = VK_IMAGE_LAYOUT_UNDEFINED;

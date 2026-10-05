@@ -98,6 +98,7 @@ using mithril::egl::swapchain_handle_device_lost;
 using mithril::egl::swapchain_poll_completed_frames;
 using mithril::egl::swapchain_flush_and_commit;
 using mithril::egl::swapchain_present;
+using mithril::egl::swapchain_refresh_default_views;
 using mithril::egl::swapchain_needs_rebuild;
 using mithril::egl::swapchain_destroy;
 
@@ -743,6 +744,16 @@ EGLBoolean eglSwapBuffers(EGLDisplay dpy, EGLSurface surface) {
     // the resize/rebuild path below recreate the swapchain at the new (non-zero)
     // size on the next swap.
     swapchain_present(s);
+
+    // Re-point the GLState default framebuffer at the image that present just
+    // acquired for the NEXT frame. Without this, g_state->eglDefaultColor keeps
+    // the view captured when the swapchain was installed, so the next frame's
+    // draws land on the image that was already presented while the display shows
+    // a freshly acquired, never-rendered one — a stale frame once every N
+    // presents and black on all the others.
+    if (t_currentDraw == s) {
+        swapchain_refresh_default_views(s);
+    }
 
     // B1 first-frame diagnostic: 记录已呈现帧计数 + 本帧 GL clear 颜色。
     // 用于真机确认首帧到底有没有出现过红色/黑色 clear 值，以及红屏是否由

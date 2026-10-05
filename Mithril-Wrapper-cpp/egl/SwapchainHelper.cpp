@@ -353,6 +353,28 @@ void swapchain_present(EglSurface* s) {
     }
 }
 
+void swapchain_refresh_default_views(EglSurface* s) {
+    if (!g_state || !s || !s->swapchain_state) return;
+    // backend_swapchain_acquire_color() is idempotent: with an index already
+    // acquired it returns that index's view instead of acquiring again, so
+    // calling it here (right after present acquired the next image) is safe
+    // and cannot consume a second image.
+    VkImageView color = backend_swapchain_acquire_color(s->swapchain_state);
+    VkImageView depth = backend_swapchain_acquire_depth(s->swapchain_state);
+    g_state->eglDefaultColor = color;
+    g_state->eglDefaultDepth = depth;
+    // Image handles too: glBlitFramebuffer / glReadPixels against FBO 0 go
+    // through eglDefaultColorImage, and a stale one would read the image that
+    // was already presented.
+    g_state->eglDefaultColorImage = backend_swapchain_current_color_image(s->swapchain_state);
+    g_state->eglDefaultDepthImage = backend_swapchain_current_depth_image(s->swapchain_state);
+    // Keep the encoder's swapchain registration in step with the acquire. When
+    // acquire failed there is no image to barrier or present, so detach —
+    // otherwise begin_render_pass would record barriers against an image index
+    // that is not owned by us.
+    backend_set_active_swapchain(color != VK_NULL_HANDLE ? s->swapchain_state : nullptr);
+}
+
 // Query whether the backend has marked the swapchain dead (fatal Vulkan error
 // from acquire/present/submit: GPU OOM / surface lost / device lost). The
 // caller (eglSwapBuffers) rebuilds the swapchain when this returns true.

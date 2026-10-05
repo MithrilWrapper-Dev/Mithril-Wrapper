@@ -201,6 +201,21 @@ void swapchain_flush_and_commit();
 // caller must have flushed via swapchain_flush_and_commit() first.
 void swapchain_present(EglSurface* s);
 
+// Re-sync the GLState's default-framebuffer handles to the swapchain image that
+// is CURRENTLY acquired. Must be called after swapchain_present() (which
+// presents one index and acquires the next), whenever the surface is the thread's
+// current draw surface.
+//
+// Why this exists: install_surface_on_state() is only invoked when the swapchain
+// is created/rebuilt, so it captured the image view acquired at that moment and
+// cached it in g_state->eglDefaultColor. Every subsequent frame presents that
+// index and acquires a DIFFERENT one, but g_state->eglDefaultColor was never
+// updated — so the next frame's draws were recorded into the image that was
+// just presented while the presentation engine displayed the freshly acquired,
+// never-rendered one. With N images that shows a stale frame once every N
+// presents and black on all the others, on every platform.
+void swapchain_refresh_default_views(EglSurface* s);
+
 // Query whether the backend has marked the swapchain dead (fatal Vulkan error:
 // GPU OOM / surface lost / device lost from acquire/present/submit). The caller
 // (eglSwapBuffers) rebuilds the swapchain when this returns true.

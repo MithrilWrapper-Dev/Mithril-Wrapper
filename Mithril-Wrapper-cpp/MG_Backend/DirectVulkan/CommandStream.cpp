@@ -890,12 +890,33 @@ void begin_render_pass(VkImageView* color_views, int color_count,
         if (sc->currentImage >= 0 && sc->currentImage < (int)sc->views.size()) {
             // Only barrier the image if one of the bound colour attachments is
             // the swapchain's current view (i.e. we're rendering to FBO 0).
+            //
+            // FIX (black screen): this used to rely on the bare handle-identity
+            // test alone. The view comes from g_state->eglDefaultColor, which
+            // can belong to a swapchain destroyed and rebuilt during deviceLost
+            // recovery; when the handles do not match, NO barrier was recorded
+            // while the classic pass below still declared
+            // initialLayout = COLOR_ATTACHMENT_OPTIMAL. The swapchain image was
+            // therefore still in PRESENT_SRC / UNDEFINED when the pass began —
+            // a tile load from the wrong state, i.e. a black frame with nothing
+            // logged anywhere. The classic path already learned this lesson for
+            // the FORMAT (it augments the identity test with the
+            // fboColorTexCount == 0 marker); the barrier must use the SAME
+            // predicate, otherwise the two disagree about whether FBO 0 is
+            // swapchain-bound.
             bool swapchainBound = false;
             for (int i = 0; i < e.colorCount; ++i) {
                 if (e.colorViews[i] == sc->views[sc->currentImage]) {
                     swapchainBound = true;
                     break;
                 }
+            }
+            // FBO 0 carries no colour texture attachments — the GL layer never
+            // calls set_fbo_attachment_tex_ids() for it — so
+            // e.fboColorTexCount == 0 is the unambiguous default-framebuffer
+            // marker. Same augmentation the classic format resolution uses.
+            if (!swapchainBound && e.fboColorTexCount == 0 && e.colorCount > 0) {
+                swapchainBound = true;
             }
             if (swapchainBound && sc->currentColorLayout != VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL) {
                 swapchainColorWasUndefined = (sc->currentColorLayout == VK_IMAGE_LAYOUT_UNDEFINED);
@@ -1344,12 +1365,60 @@ void begin_render_pass(VkImageView* color_views, int color_count,
                                                    : "depth attachment dropped");
             }
         }
+        // ---- 初始布局（MobileGL 模型）----
+        // 见 RenderPassCompat.cpp 的说明：声明图像「实际处于」的布局。
+        // 交换链颜色图用 sc->currentColorLayout（acquire 后为 UNDEFINED，
+        // barrier 跑过后为 COLOR_ATTACHMENT_OPTIMAL）；用户 FBO 纹理用
+        // TextureEntry::currentLayout；两者都不可知时退化为 UNDEFINED，
+        // 并把 LOAD 降级为 DONT_CARE（MobileGL VkRenderPassManager.cpp:967
+        // —— 对 UNDEFINED 图像做 LOAD 既非法又毫无意义）。
+        VkImageLayout colorInitial[8] = {};
+        for (int i = 0; i < e.colorCount; ++i) {
+            bool isSwapView = (e.activeSwapchain &&
+                               colorFmts[i] == e.activeSwapchain->format &&
+                               e.fboColorTexCount == 0);
+            if (!isSwapView && e.activeSwapchain) {
+                for (size_t k = 0; k < e.activeSwapchain->views.size(); ++k) {
+                    if (e.colorViews[i] == e.activeSwapchain->views[k]) { isSwapView = true; break; }
+                }
+            }
+            VkImageLayout actual = VK_IMAGE_LAYOUT_UNDEFINED;
+            if (isSwapView && e.activeSwapchain) {
+                actual = e.activeSwapchain->currentColorLayout;
+            } else if (i < e.fboColorTexCount && e.fboColorTexIds[i] != 0) {
+                auto itL = texture_table().find(e.fboColorTexIds[i]);
+                if (itL != texture_table().end()) actual = itL->second.currentLayout;
+            }
+            if (actual == VK_IMAGE_LAYOUT_UNDEFINED &&
+                colorLoad[i] == VK_ATTACHMENT_LOAD_OP_LOAD) {
+                colorLoad[i] = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+            }
+            colorInitial[i] = actual;
+        }
+        VkImageLayout depthInitial = VK_IMAGE_LAYOUT_UNDEFINED;
+        VkAttachmentLoadOp classicDepthLoad = classicDepthView ? depthAttach.loadOp
+                                                              : VK_ATTACHMENT_LOAD_OP_LOAD;
+        if (classicDepthView != VK_NULL_HANDLE) {
+            if (e.activeSwapchain && classicDepthView == e.activeSwapchain->depthView) {
+                depthInitial = e.activeSwapchain->depthLayoutInitialized
+                                   ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL
+                                   : VK_IMAGE_LAYOUT_UNDEFINED;
+            } else if (e.fboDepthTexId != 0) {
+                auto itD = texture_table().find(e.fboDepthTexId);
+                if (itD != texture_table().end()) depthInitial = itD->second.currentLayout;
+            }
+            if (depthInitial == VK_IMAGE_LAYOUT_UNDEFINED &&
+                classicDepthLoad == VK_ATTACHMENT_LOAD_OP_LOAD) {
+                classicDepthLoad = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+            }
+        }
         VkRenderPass compatPass = mithril_vk_render_pass_for(
             colorFmts, e.colorCount,
             classicDepthView ? e.depthFormat : VK_FORMAT_UNDEFINED,
             VK_SAMPLE_COUNT_1_BIT, colorLoad, colorStore,
-            classicDepthView ? depthAttach.loadOp : VK_ATTACHMENT_LOAD_OP_LOAD,
-            classicDepthView ? depthAttach.storeOp : VK_ATTACHMENT_STORE_OP_STORE);
+            classicDepthLoad,
+            classicDepthView ? depthAttach.storeOp : VK_ATTACHMENT_STORE_OP_STORE,
+            colorInitial, depthInitial);
         // Publish the handle this pass is begun with, so the pipeline can be
         // compiled against this very pass (MobileGL model) instead of a
         // separately keyed canonical one.

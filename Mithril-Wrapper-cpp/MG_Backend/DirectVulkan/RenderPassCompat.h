@@ -40,7 +40,15 @@ VkRenderPass mithril_vk_render_pass_for(const VkFormat* color_formats,
                                         const VkAttachmentLoadOp* color_load,
                                         const VkAttachmentStoreOp* color_store,
                                         VkAttachmentLoadOp depth_load,
-                                        VkAttachmentStoreOp depth_store);
+                                        VkAttachmentStoreOp depth_store,
+                                        // ---- 对齐 MobileGL VkRenderPassManager ----
+                                        // 声明的 initialLayout 必须是图像「实际处于」的布局，
+                                        // 而不是我们希望它在的布局。传 nullptr 时保持旧行为
+                                        // （COLOR_ATTACHMENT_OPTIMAL），仅供管线编译用的
+                                        // 「规范」pass 使用 —— 它从不被 vkCmdBeginRenderPass
+                                        // 开启，所以 initialLayout 不会被引擎读取。
+                                        const VkImageLayout* color_initial_layouts = nullptr,
+                                        VkImageLayout depth_initial_layout = VK_IMAGE_LAYOUT_UNDEFINED);
 
 // 取得（或创建）一个 VkFramebuffer。内部用一个同签名的兼容 pass 创建它，
 // 因此可与 mithril_vk_render_pass_for 返回的任意同签名 pass 配合使用。

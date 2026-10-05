@@ -33,6 +33,10 @@ struct PassKey {
     VkSampleCountFlagBits samples;
     VkAttachmentLoadOp  depthLoad;
     VkAttachmentStoreOp depthStore;
+    // 附件「实际处于」的初始布局（MobileGL 模型）。参与缓存键：同一签名、
+    // 不同初始布局的两个 pass 是不同的对象，不能复用。
+    VkImageLayout       colorInitial[kMaxCompatAttachments];
+    VkImageLayout       depthInitial;
     int                 colorCount;
 
     bool operator==(const PassKey& o) const {
@@ -41,7 +45,9 @@ struct PassKey {
         if (samples != o.samples) return false;
         if (depthLoad != o.depthLoad) return false;
         if (depthStore != o.depthStore) return false;
+        if (depthInitial != o.depthInitial) return false;
         for (int i = 0; i < colorCount; ++i) {
+            if (colorInitial[i] != o.colorInitial[i]) return false;
             if (colorFormats[i] != o.colorFormats[i]) return false;
             if (colorLoad[i] != o.colorLoad[i]) return false;
             if (colorStore[i] != o.colorStore[i]) return false;
@@ -62,8 +68,10 @@ struct PassKeyHash {
         mixU32((uint32_t)k.samples);
         mixU32((uint32_t)k.depthLoad);
         mixU32((uint32_t)k.depthStore);
+        mixU32((uint32_t)k.depthInitial);
         for (int i = 0; i < k.colorCount; ++i) {
             mixU32((uint32_t)k.colorFormats[i]);
+            mixU32((uint32_t)k.colorInitial[i]);
             mixU32((uint32_t)k.colorLoad[i]);
             mixU32((uint32_t)k.colorStore[i]);
         }
@@ -121,7 +129,9 @@ VkRenderPass mithril_vk_render_pass_for(const VkFormat* color_formats,
                                         const VkAttachmentLoadOp* color_load,
                                         const VkAttachmentStoreOp* color_store,
                                         VkAttachmentLoadOp depth_load,
-                                        VkAttachmentStoreOp depth_store) {
+                                        VkAttachmentStoreOp depth_store,
+                                        const VkImageLayout* color_initial_layouts,
+                                        VkImageLayout depth_initial_layout) {
     Backend* b = backend();
     if (!b || !b->device) return VK_NULL_HANDLE;
     if (color_count < 0) color_count = 0;
@@ -134,10 +144,15 @@ VkRenderPass mithril_vk_render_pass_for(const VkFormat* color_formats,
     key.samples = samples;
     key.depthLoad = depth_load;
     key.depthStore = depth_store;
+    key.depthInitial = color_initial_layouts ? depth_initial_layout
+                                             : VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
     for (int i = 0; i < kMaxCompatAttachments; ++i) {
         key.colorFormats[i] = VK_FORMAT_UNDEFINED;
         key.colorLoad[i] = VK_ATTACHMENT_LOAD_OP_LOAD;
         key.colorStore[i] = VK_ATTACHMENT_STORE_OP_STORE;
+        key.colorInitial[i] = color_initial_layouts
+            ? color_initial_layouts[i]
+            : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     }
     for (int i = 0; i < color_count; ++i) {
         key.colorFormats[i] = color_formats ? color_formats[i] : VK_FORMAT_UNDEFINED;
@@ -148,9 +163,17 @@ VkRenderPass mithril_vk_render_pass_for(const VkFormat* color_formats,
     auto it = pass_cache().find(key);
     if (it != pass_cache().end()) return it->second;
 
-    // 附件布局：begin_render_pass 已经把颜色图 barrier 到
-    // COLOR_ATTACHMENT_OPTIMAL、深度图 barrier 到
-    // DEPTH_STENCIL_ATTACHMENT_OPTIMAL，所以 initial/final 都用同一个布局。
+    // 附件初始布局 —— 对齐 MobileGL VkRenderPassManager.cpp 的
+    // `rbDesc.initialLayout = (rbHasClear || trackedLayout == UNDEFINED)
+    //      ? UNDEFINED : trackedLayout;`
+    //
+    // 之前这里无条件写 COLOR_ATTACHMENT_OPTIMAL，等于断言「begin_render_pass
+    // 的 barrier 一定跑过了」。但那条 barrier 是条件性的：它要求附件被识别为
+    // 交换链当前视图（currentImage >= 0，重建/恢复窗口内为 -1）或纹理表条目
+    // （要求 GL 层注册过）。两条都不成立时图像实际仍在 PRESENT_SRC /
+    // SHADER_READ_ONLY / UNDEFINED，而 pass 声明 COLOR_ATTACHMENT_OPTIMAL
+    // —— tiler（Adreno）于是从错误的状态做 tile load：纯黑，无报错、无校验层
+    // 提示。声明真实布局则永远合法；UNDEFINED 配 DONT_CARE/CLEAR 由调用方保证。
     VkAttachmentDescription attachments[kMaxCompatAttachments + 1];
     VkAttachmentReference colorRefs[kMaxCompatAttachments];
     VkAttachmentReference depthRef{};
@@ -167,7 +190,7 @@ VkRenderPass mithril_vk_render_pass_for(const VkFormat* color_formats,
         a.storeOp = key.colorStore[i];
         a.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
         a.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-        a.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        a.initialLayout = key.colorInitial[i];
         a.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
         colorRefs[i].attachment = attachmentCount;
         colorRefs[i].layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
@@ -185,7 +208,7 @@ VkRenderPass mithril_vk_render_pass_for(const VkFormat* color_formats,
         // D32_SFLOAT_S8_UINT 上的 stencil 内容未定义。统一 LOAD/STORE 最稳。
         a.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
         a.stencilStoreOp = VK_ATTACHMENT_STORE_OP_STORE;
-        a.initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+        a.initialLayout = key.depthInitial;
         a.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
         depthRef.attachment = attachmentCount;
         depthRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
@@ -231,10 +254,23 @@ VkRenderPass mithril_vk_render_pass_for(const VkFormat* color_formats,
     deps[1].dstSubpass = VK_SUBPASS_EXTERNAL;
     deps[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
                            VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
-    deps[1].dstStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+    // 对齐 MobileGL：dstStageMask 用真实阶段而不是 BOTTOM_OF_PIPE。
+    // BOTTOM_OF_PIPE 意味着「没有阶段等待」，这条依赖实际上不起排序作用；
+    // 而我们的整帧就是 pass -> end -> blit -> present 的链条，缺的正是
+    // TRANSFER_BIT —— 即把结果搬到交换链的那一步。
+    deps[1].dstStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |
+                           VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT |
+                           VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
+                           VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+                           VK_PIPELINE_STAGE_TRANSFER_BIT;
     deps[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
                             VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-    deps[1].dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
+    deps[1].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT |
+                            VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
+                            VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
+                            VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT |
+                            VK_ACCESS_SHADER_READ_BIT |
+                            VK_ACCESS_TRANSFER_READ_BIT;
     deps[1].dependencyFlags = 0;
 
     VkRenderPassCreateInfo ci{};

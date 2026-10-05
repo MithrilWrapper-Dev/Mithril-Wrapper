@@ -188,12 +188,86 @@ struct EncoderState {
     uint32_t invalidateColorMask = 0;  // bit i = color attachment i discard
     bool invalidateDepth = false;
     bool invalidateStencil = false;
+
+    // ---- Per-command-buffer dynamic-state shadow (throughput) ----
+    // A Minecraft chunk frame issues thousands of draws that repeat the same
+    // pipeline, vertex bindings and dynamic state. Every one of those vkCmd*
+    // calls is pure driver-side work: on MoltenVK each crosses into
+    // Objective-C, and on Adreno each is a validated command-stream write.
+    // prepare_draw() re-applies the whole GL state vector before every draw,
+    // so without a shadow a frame records tens of thousands of redundant
+    // commands that cost more than the draws they precede.
+    //
+    // MobileGL shadows the same class of state (DynamicStateShadow +
+    // ShadowedBindVertexBuffers in VulkanRenderer.cpp). This shadow covers a
+    // strictly larger set — pipeline, push constants, depth triple, blend
+    // constants, depth bias, cull, front face, viewport, scissor and the whole
+    // vertex-binding vector — and it is keyed on the RESOLVED Vulkan values
+    // (post Y-flip, post layout resolve), so it self-corrects whenever an
+    // input changes meaning rather than just its value.
+    struct DrawShadow {
+        // Vertex bindings. Index == attribute location == Vulkan binding
+        // (see Pipeline.cpp: "one attribute, one binding").
+        VkBuffer      vb[16]      = {};
+        VkDeviceSize  vbOff[16]   = {};
+        uint32_t      vbCount     = 0;
+        bool          vbValid     = false;
+
+        bool   pipelineValid = false;
+        bool   pushValid     = false;
+        VkPipelineLayout pushLayout = VK_NULL_HANDLE;
+        uint32_t pushOffset = 0;
+        uint32_t pushSize   = 0;
+        unsigned char pushData[64] = {};
+
+        bool   depthValid  = false;
+        int    depthEnabled = 0, depthWrite = 0, depthFunc = 0;
+
+        bool   blendConstValid = false;
+        float  blendConst[4]   = {};
+
+        bool   biasValid = false;
+        float  biasSlope = 0.0f, biasClamp = 0.0f;
+
+        bool   cullValid = false;
+        int    cullMode  = 0;
+
+        bool   frontValid = false;
+        int    frontCcw   = 0;
+
+        bool   vpValid = false;
+        int    vpX = 0, vpY = 0, vpW = 0, vpH = 0;
+        double vpNear = 0.0, vpFar = 0.0;
+
+        bool   scValid = false;
+        int    scX = 0, scY = 0, scW = 0, scH = 0;
+
+        void reset() {
+            vbValid = false; vbCount = 0;
+            pipelineValid = false;
+            pushValid = false; pushLayout = VK_NULL_HANDLE; pushSize = 0;
+            depthValid = false;
+            blendConstValid = false;
+            biasValid = false;
+            cullValid = false;
+            frontValid = false;
+            vpValid = false;
+            scValid = false;
+        }
+    } shadow;
 };
 
 EncoderState& encoder() {
     static EncoderState s;
     return s;
 }
+
+/* Drop every dynamic-state shadow. Called at each genuine command-buffer
+ * boundary: a freshly begun buffer holds no pipeline, no push constants and no
+ * dynamic state, so a stale shadow would make the first draw of the frame
+ * "recognise" state that only existed in the previous buffer and skip a
+ * vkCmd* it genuinely needs. */
+void reset_draw_shadow() { encoder().shadow.reset(); }
 
 /*
  * Record an image-memory barrier transitioning `image` from `oldLayout` to
@@ -758,6 +832,7 @@ bool ensure_command_buffer_recording() {
      * re-begun buffer has no pipeline bound, so the tracking handle must be
      * cleared here or backend_draw_* would wrongly believe one is live. */
     encoder().boundPipeline = VK_NULL_HANDLE;
+    mithril::vk::reset_draw_shadow();
     // A freshly begun command buffer has no descriptor set bound either.
     // Reset the flag so backend_draw_* refuses a draw until bind_program_
     // descriptors() actually binds a set into this buffer.
@@ -2361,6 +2436,9 @@ void reset_encoder_state() {
     // stale recording flag left over from the pre-deviceLost frame.
     Backend* b = backend();
     if (b) b->commandBufferRecording = false;
+    // deviceLost recovery rebuilds the command buffers; every shadowed
+    // vkCmd* must be re-issued into the new buffer.
+    e.shadow.reset();
 }
 
 } // namespace vk
@@ -2533,7 +2611,14 @@ void backend_bind_pipeline(VkPipeline pipeline) {
     // begin_render_pass, b->commandBuffer may be non-null but not in the
     // RECORDING state — recording into it spams VK_NOT_READY.
     if (b->commandBuffer && b->commandBufferRecording && pipeline) {
-        vkCmdBindPipeline(b->commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+        auto& sh = mithril::vk::encoder().shadow;
+        if (sh.pipelineValid && mithril::vk::encoder().boundPipeline == pipeline) {
+            // Already the bound pipeline in this command buffer: identical
+            // bind, no observable difference, one less validated write.
+        } else {
+            vkCmdBindPipeline(b->commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+            sh.pipelineValid = true;
+        }
         mithril::vk::encoder().boundPipeline = pipeline;
     } else {
         mithril::vk::encoder().boundPipeline = VK_NULL_HANDLE;
@@ -2568,6 +2653,21 @@ void backend_push_constants(GLuint program, uint32_t offset, uint32_t size,
     }
     if (layout == VK_NULL_HANDLE) return;
 
+    // Shadowed per (layout, offset, size, bytes). Keyed on the resolved
+    // VkPipelineLayout, so two programs never share an entry: push-constant
+    // state is only inherited between push-compatible layouts, and keying on
+    // the layout object keeps the shortcut strictly within one layout.
+    auto& sh = mithril::vk::encoder().shadow;
+    if (size <= sizeof(sh.pushData)) {
+        if (sh.pushValid && sh.pushLayout == layout && sh.pushOffset == offset &&
+            sh.pushSize == size &&
+            std::memcmp(sh.pushData, data, size) == 0) return;
+        std::memcpy(sh.pushData, data, size);
+        sh.pushLayout = layout; sh.pushOffset = offset; sh.pushSize = size;
+        sh.pushValid = true;
+    } else {
+        sh.pushValid = false;
+    }
     vkCmdPushConstants(b->commandBuffer, layout, VK_SHADER_STAGE_VERTEX_BIT,
                        offset, size, data);
 }
@@ -2698,6 +2798,14 @@ void backend_set_viewport(int x, int y, int w, int h, double znear, double zfar)
         fbHeight = mithril::g_state->viewportH;
     }
     int vk_y = fbHeight - y - h;
+    // Shadowed on the RESOLVED rect: the Y-flip depends on the active pass
+    // height, so a pass change that alters the resolved rect is seen here
+    // even when the GL arguments are unchanged.
+    auto& sh = mithril::vk::encoder().shadow;
+    if (sh.vpValid && sh.vpX == x && sh.vpY == vk_y && sh.vpW == w && sh.vpH == h &&
+        sh.vpNear == znear && sh.vpFar == zfar) return;
+    sh.vpValid = true; sh.vpX = x; sh.vpY = vk_y; sh.vpW = w; sh.vpH = h;
+    sh.vpNear = znear; sh.vpFar = zfar;
     VkViewport vp{};
     vp.x        = (float)x;
     vp.y        = (float)vk_y;
@@ -2725,18 +2833,63 @@ void backend_set_scissor(int x, int y, int w, int h) {
         fbHeight = mithril::g_state->viewportH;
     }
     int vk_y = fbHeight - y - h;
+    auto& sh = mithril::vk::encoder().shadow;
+    if (sh.scValid && sh.scX == x && sh.scY == vk_y && sh.scW == w && sh.scH == h) return;
+    sh.scValid = true; sh.scX = x; sh.scY = vk_y; sh.scW = w; sh.scH = h;
     VkRect2D sc{};
     sc.offset.x = x; sc.offset.y = vk_y;
     sc.extent.width = (uint32_t)w; sc.extent.height = (uint32_t)h;
     vkCmdSetScissor(b->commandBuffer, 0, 1, &sc);
 }
 
+void backend_bind_vertex_buffers(int firstBinding, int count,
+                                 const VkBuffer* buffers,
+                                 const VkDeviceSize* offsets) {
+    mithril::vk::Backend* b = mithril::vk::backend();
+    if (!b->commandBuffer || !b->commandBufferRecording || !buffers || !offsets) return;
+    if (count <= 0 || firstBinding < 0) return;
+    if (count > 16) count = 16;
+    auto& sh = mithril::vk::encoder().shadow;
+    // One vkCmdBindVertexBuffers for the whole vector, skipped entirely when
+    // this command buffer already holds exactly these (buffer, offset) pairs.
+    // prepare_draw() re-resolves and re-binds every attribute before every
+    // draw; consecutive draws in a chunk batch resolve to the identical
+    // vector, so this removes up to 16 validated command writes per draw.
+    bool identical = sh.vbValid && sh.vbCount == (uint32_t)(firstBinding + count);
+    if (identical) {
+        for (int i = 0; i < count; ++i) {
+            if (sh.vb[firstBinding + i] != buffers[i] ||
+                sh.vbOff[firstBinding + i] != offsets[i]) { identical = false; break; }
+        }
+    }
+    if (identical) return;
+    vkCmdBindVertexBuffers(b->commandBuffer, (uint32_t)firstBinding,
+                           (uint32_t)count, buffers, offsets);
+    if (firstBinding + count <= 16) {
+        for (int i = 0; i < count; ++i) {
+            sh.vb[firstBinding + i] = buffers[i];
+            sh.vbOff[firstBinding + i] = offsets[i];
+        }
+        sh.vbCount = (uint32_t)(firstBinding + count);
+        sh.vbValid = true;
+    } else {
+        sh.vbValid = false;
+    }
+}
+
 void backend_set_vertex_buffer(int slot, VkBuffer buffer, VkDeviceSize offset) {
     mithril::vk::Backend* b = mithril::vk::backend();
     // FIX (VK_NOT_READY storm): guard against non-recording command buffer.
     if (!b->commandBuffer || !b->commandBufferRecording || !buffer) return;
+    if (slot < 0 || slot >= 16) return;
+    auto& sh = mithril::vk::encoder().shadow;
+    if (sh.vbValid && sh.vbCount > (uint32_t)slot &&
+        sh.vb[slot] == buffer && sh.vbOff[slot] == offset) return;
     VkDeviceSize offsets[1] = { offset };
     vkCmdBindVertexBuffers(b->commandBuffer, (uint32_t)slot, 1, &buffer, offsets);
+    sh.vb[slot] = buffer; sh.vbOff[slot] = offset;
+    if ((uint32_t)(slot + 1) > sh.vbCount) sh.vbCount = (uint32_t)(slot + 1);
+    sh.vbValid = true;
 }
 
 void backend_set_fragment_buffer(int slot, VkBuffer buffer, VkDeviceSize offset) {
@@ -2766,6 +2919,11 @@ void backend_set_blend_color(float r, float g, float b, float a) {
     // FIX (VK_NOT_READY storm): guard against non-recording command buffer.
     if (!bk->commandBuffer || !bk->commandBufferRecording) return;
     float bc[4] = { r, g, b, a };
+    auto& sh = mithril::vk::encoder().shadow;
+    if (sh.blendConstValid && sh.blendConst[0] == bc[0] && sh.blendConst[1] == bc[1] &&
+        sh.blendConst[2] == bc[2] && sh.blendConst[3] == bc[3]) return;
+    std::memcpy(sh.blendConst, bc, sizeof(bc));
+    sh.blendConstValid = true;
     vkCmdSetBlendConstants(bk->commandBuffer, bc);
 }
 
@@ -2773,6 +2931,9 @@ void backend_set_depth_bias(float slope, float clamp) {
     mithril::vk::Backend* b = mithril::vk::backend();
     // FIX (VK_NOT_READY storm): guard against non-recording command buffer.
     if (!b->commandBuffer || !b->commandBufferRecording) return;
+    auto& sh = mithril::vk::encoder().shadow;
+    if (sh.biasValid && sh.biasSlope == slope && sh.biasClamp == clamp) return;
+    sh.biasValid = true; sh.biasSlope = slope; sh.biasClamp = clamp;
     vkCmdSetDepthBias(b->commandBuffer, slope, clamp, 0.0f);
 }
 
@@ -2786,6 +2947,9 @@ void backend_set_cull_mode(int mode) {
     else if (mode == 3) cull = VK_CULL_MODE_FRONT_AND_BACK;
     // Resolved, not linked (see Device.h): absent on Android's libvulkan.so.
     if (!b->extendedDynamicStateSupported || !b->cmdSetCullMode) return;
+    auto& sh = mithril::vk::encoder().shadow;
+    if (sh.cullValid && sh.cullMode == mode) return;
+    sh.cullValid = true; sh.cullMode = mode;
     reinterpret_cast<PFN_vkCmdSetCullMode>(b->cmdSetCullMode)(b->commandBuffer, cull);
 }
 
@@ -2794,6 +2958,9 @@ void backend_set_front_face(int ccw) {
     // FIX (VK_NOT_READY storm): guard against non-recording command buffer.
     if (!b->commandBuffer || !b->commandBufferRecording) return;
     if (!b->extendedDynamicStateSupported || !b->cmdSetFrontFace) return;
+    auto& sh = mithril::vk::encoder().shadow;
+    if (sh.frontValid && sh.frontCcw == ccw) return;
+    sh.frontValid = true; sh.frontCcw = ccw;
     reinterpret_cast<PFN_vkCmdSetFrontFace>(b->cmdSetFrontFace)(
         b->commandBuffer, ccw ? VK_FRONT_FACE_COUNTER_CLOCKWISE : VK_FRONT_FACE_CLOCKWISE);
 }
@@ -2807,6 +2974,14 @@ void backend_set_depth_test(int enabled, int write_mask, int compare_func) {
     // pipeline key), so silently skipping is the correct fallback here.
     if (!b->extendedDynamicStateSupported || !b->cmdSetDepthTestEnable ||
         !b->cmdSetDepthWriteEnable || !b->cmdSetDepthCompareOp) return;
+    // Three vkCmd* calls per draw behind one compare: GL re-applies
+    // enable/write/func before every draw, and a chunk batch rarely changes
+    // any of them.
+    auto& sh = mithril::vk::encoder().shadow;
+    if (sh.depthValid && sh.depthEnabled == enabled &&
+        sh.depthWrite == write_mask && sh.depthFunc == compare_func) return;
+    sh.depthValid = true; sh.depthEnabled = enabled;
+    sh.depthWrite = write_mask; sh.depthFunc = compare_func;
     reinterpret_cast<PFN_vkCmdSetDepthTestEnable>(b->cmdSetDepthTestEnable)(
         b->commandBuffer, enabled ? VK_TRUE : VK_FALSE);
     reinterpret_cast<PFN_vkCmdSetDepthWriteEnable>(b->cmdSetDepthWriteEnable)(

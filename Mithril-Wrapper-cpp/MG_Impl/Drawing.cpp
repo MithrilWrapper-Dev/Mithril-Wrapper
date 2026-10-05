@@ -590,9 +590,35 @@ static bool prepare_draw(GLenum mode) {
     // unbound memory.
     VkBuffer zero_buf = backend_get_zero_buffer();
     bool bound_slots[16] = {false};
+    // Resolved vertex-binding vector, bound in ONE vkCmdBindVertexBuffers call
+    // below instead of one call per attribute (and skipped entirely when this
+    // command buffer already holds the identical vector — see
+    // CommandStream.cpp). prepare_draw() re-resolves every attribute before
+    // every draw, so this is the largest single cut in per-draw command
+    // traffic available in the draw path.
+    VkBuffer vb_bufs[16];
+    VkDeviceSize vb_offs[16];
     for (int i = 0; i < attrib_count; ++i) {
         MGVertexAttrib& m = attribs[i];
         VkBuffer buf = backend_get_buffer(m.buffer_name);
+        if (buf == VK_NULL_HANDLE && m.buffer_name != 0) {
+            // An enabled attribute whose buffer has no backend VkBuffer used to
+            // fall through to the zero buffer below with no diagnostic at all:
+            // the shader then reads vec4(0) for every vertex of that attribute,
+            // every draw collapses to a degenerate point, and the frame
+            // presents at full rate with nothing on it. That is
+            // indistinguishable from a viewport / shader / layout fault and is
+            // the most expensive class of bug to chase. Say so once.
+            static bool warnedNoBuf = false;
+            if (!warnedNoBuf) {
+                warnedNoBuf = true;
+                MITHRIL_LOG_WARN("gl", "prepare_draw: vertex attrib %d (buffer %u, "
+                                 "vao %u) has no backend VkBuffer - it reads "
+                                 "zeros, geometry will collapse",
+                                 m.location, m.buffer_name,
+                                 (unsigned)(g_state ? g_state->currentVAO : 0u));
+            }
+        }
         if (buf != VK_NULL_HANDLE) {
             // pOffsets = the binding base offset (glBindVertexBuffer offset);
             // 0 for the legacy path (bindings untouched). The member/relative
@@ -606,7 +632,10 @@ static bool prepare_draw(GLenum mode) {
 // 偏移会被应用两次 → 有效地址 = buffer + 2*m.offset，导致交错顶点格式（如
 // position@0/color@12/uv@24）的属性读取错位 → 加载界面红屏/花屏。
 // 参考 MobileGL VkglVertexAttribBindingState：binding offset 恒为 0，偏移由属性描述处理。
-            backend_set_vertex_buffer(m.location, buf, binding_off);
+            if (m.location >= 0 && m.location < 16) {
+                vb_bufs[m.location] = buf;
+                vb_offs[m.location] = binding_off;
+            }
             if (getenv("MITHRIL_VA_DUMP")) fprintf(stderr,"[LOW] slot=%d vkbuf=%p off=%llu\n",m.location,(void*)buf,(unsigned long long)binding_off);
             if (getenv("MITHRIL_GEO_DUMP") && m.location==0 && m.stride==16) {
                 static int gn2=0; if(gn2<2){++gn2; unsigned char raw[120]={0};
@@ -647,13 +676,33 @@ static bool prepare_draw(GLenum mode) {
             if (m.location < 16) bound_slots[m.location] = true;
         }
     }
-    // Bind the zero buffer to any slot 0..15 not covered above.
-    if (zero_buf != VK_NULL_HANDLE) {
-        for (int loc = 0; loc < 16; ++loc) {
+    // Any declared slot that resolved to no buffer reads the zero buffer, so an
+    // unbound vertex input yields vec4(0) instead of dereferencing undefined
+    // memory. Only slots below the highest declared location are filled: the
+    // pipeline declares bindings exclusively for enabled attributes, so slots
+    // above that are never fetched and binding them is wasted work.
+    int vb_hi = 0;
+    for (int i = 0; i < attrib_count; ++i) {
+        int loc = attribs[i].location;
+        if (loc >= 0 && loc < 16 && loc + 1 > vb_hi) vb_hi = loc + 1;
+    }
+    if (vb_hi > 0) {
+        bool complete = true;
+        for (int loc = 0; loc < vb_hi; ++loc) {
             if (!bound_slots[loc]) {
-                backend_set_vertex_buffer(loc, zero_buf, 0);
+                // No zero buffer available (backend not initialised yet): a
+                // null VkBuffer in the array is invalid, so bind only the
+                // leading run of resolved slots instead of the whole vector.
+                if (zero_buf == VK_NULL_HANDLE) { complete = false; break; }
+                vb_bufs[loc] = zero_buf; vb_offs[loc] = 0;
             }
         }
+        if (!complete) {
+            int run = 0;
+            while (run < vb_hi && bound_slots[run]) ++run;
+            vb_hi = run;
+        }
+        if (vb_hi > 0) backend_bind_vertex_buffers(0, vb_hi, vb_bufs, vb_offs);
     }
 
     // Uniform buffers and sampled-image bindings are now sourced + bound via

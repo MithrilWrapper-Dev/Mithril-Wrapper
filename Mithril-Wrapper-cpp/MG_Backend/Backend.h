@@ -225,6 +225,18 @@ void backend_bind_pipeline(VkPipeline pipeline);
 void backend_set_viewport(int x, int y, int w, int h, double znear, double zfar);
 void backend_set_scissor(int x, int y, int w, int h);
 void backend_set_vertex_buffer(int slot, VkBuffer buffer, VkDeviceSize offset);
+
+/* Bind the whole vertex-binding vector in one vkCmdBindVertexBuffers call.
+ * Semantically identical to calling backend_set_vertex_buffer once per slot,
+ * but a single validated command write instead of up to sixteen, and it is
+ * skipped entirely when this command buffer already holds the same
+ * (buffer, offset) pairs. prepare_draw() re-binds every attribute before
+ * every draw; consecutive draws in a chunk batch resolve identically, so this
+ * is the single largest reduction in per-draw command-stream traffic.
+ * Slots past the ones supplied here are left untouched. */
+void backend_bind_vertex_buffers(int firstBinding, int count,
+                                 const VkBuffer* buffers,
+                                 const VkDeviceSize* offsets);
 void backend_set_fragment_buffer(int slot, VkBuffer buffer, VkDeviceSize offset);
 void backend_set_vertex_texture(int slot, VkImageView view, VkSampler sampler);
 void backend_set_fragment_texture(int slot, VkImageView view, VkSampler sampler);

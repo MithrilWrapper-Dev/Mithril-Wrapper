@@ -1084,12 +1084,23 @@ void bind_program_descriptors(GLuint program, VkPipelineBindPoint bindPoint) {
             // DEBUG (sampler black-screen triage): log how each sampler binding
             // resolved so CI can tell a real-texture bind (tex_id != 0) from the
             // default-black fallback, and whether the view/sampler are valid.
-            MITHRIL_LOG_DEBUG("vk", "sampler bind prog=%u binding=%u unit=%d tex=%u "
-                              "viewValid=%d sampValid=%d (default view=%d samp=%d)",
-                              program, db.binding, unit, tex_id,
-                              view != VK_NULL_HANDLE, samp != VK_NULL_HANDLE,
-                              default_texture().view != VK_NULL_HANDLE,
-                              default_texture().sampler != VK_NULL_HANDLE);
+            // Sampled instead of logged unconditionally: these bound ~90% of a
+            // real log and buried every other diagnostic. Still logged in full
+            // whenever the bind is in any way abnormal (missing view/sampler or
+            // an unbound texture id), which is what it was added to catch.
+            {
+                static uint64_t sbN = 0;
+                ++sbN;
+                if ((sbN % 500u) == 1 || view == VK_NULL_HANDLE ||
+                    samp == VK_NULL_HANDLE || tex_id == 0) {
+                    MITHRIL_LOG_DEBUG("vk", "sampler bind #%llu prog=%u binding=%u unit=%d tex=%u "
+                                      "viewValid=%d sampValid=%d (default view=%d samp=%d)",
+                                      (unsigned long long)sbN, program, db.binding, unit, tex_id,
+                                      view != VK_NULL_HANDLE, samp != VK_NULL_HANDLE,
+                                      default_texture().view != VK_NULL_HANDLE,
+                                      default_texture().sampler != VK_NULL_HANDLE);
+                }
+            }
             if (view != VK_NULL_HANDLE && samp != VK_NULL_HANDLE) {
                 // FIX (Root Cause AH - depth-stencil descriptor layout):
                 // 旧代码硬编码 imageLayout = SHADER_READ_ONLY_OPTIMAL，对 depth-stencil

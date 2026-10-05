@@ -751,7 +751,13 @@ EGLBoolean eglSwapBuffers(EGLDisplay dpy, EGLSurface surface) {
         backend_debug_frame_fbo_log();
         ++mithril::g_state->presentedFrames;
         bool diag_dump = std::getenv("MITHRIL_DUMP_BLIT") != nullptr;
-        if (mithril::g_state->presentedFrames <= 60 || diag_dump) {
+        // The first-60-frames-only cap hid the steady state: those frames are
+        // all on the Mojang loading screen, where draws are legitimately 0, so
+        // the diagnostic never reported a single frame of real gameplay and a
+        // black title screen was invisible to it. Keep every frame up to 60,
+        // then sample every 60th indefinitely.
+        if (mithril::g_state->presentedFrames <= 60 ||
+            (mithril::g_state->presentedFrames % 60u) == 0 || diag_dump) {
             // B1: log the frame's recorded draw count. draw>0 => draws reached
             // the command buffer but fragments aren't visible (depth/viewport/
             // shader); draw==0 => draws were dropped before recording.

@@ -21,6 +21,7 @@
 #include <cstring>
 #include <vector>
 #include <unordered_map>
+#include <unordered_set>
 #include <algorithm>
 
 // glMemoryBarrier bit tested by backend_memory_barrier. The bundled
@@ -1253,16 +1254,30 @@ void begin_render_pass(VkImageView* color_views, int color_count,
         // GPU at the first draw, so this must be comparable with the pipeline
         // compile-time signature.
         {
-            static uint32_t sigN = 0;
-            if (sigN < 12) {
+            // Dedupe by signature instead of capping at a fixed count: a cap
+            // only ever shows the first few passes (all of them on the loading
+            // screen) and then goes blind, which is exactly the window where a
+            // new FBO shape appears and faults the GPU.
+            static std::unordered_set<uint64_t> seenSigs;
+            {
+                uint64_t key = (uint64_t)(uint32_t)e.colorCount;
+                for (int i = 0; i < e.colorCount; ++i) key = key * 131u + (uint32_t)colorFmts[i];
+                key = key * 131u + (uint32_t)e.depthFormat;
+                key = key * 131u + (e.depthView != VK_NULL_HANDLE);
+                key = key * 131u + (uint32_t)(e.activeSwapchain ? e.activeSwapchain->format : 0);
+                key = key * 131u + (uint32_t)(e.fboColorTexCount);
+                if (seenSigs.insert(key).second) {
+                static uint32_t sigN = 0;
                 ++sigN;
-                MITHRIL_LOG_WARN("vk", "classic pass sig #%u: colors=%d fmt0=%d fmt1=%d depthFmt=%d depthView=%d swapFmt=%d curImg=%d",
+                MITHRIL_LOG_WARN("vk", "classic pass sig #%u: colors=%d fmt0=%d fmt1=%d depthFmt=%d depthView=%d swapFmt=%d curImg=%d fboTex=%d",
                                  sigN, e.colorCount, (int)colorFmts[0],
                                  e.colorCount > 1 ? (int)colorFmts[1] : -1,
                                  (int)(e.depthView ? e.depthFormat : VK_FORMAT_UNDEFINED),
                                  e.depthView != VK_NULL_HANDLE,
                                  e.activeSwapchain ? (int)e.activeSwapchain->format : -1,
-                                 e.activeSwapchain ? e.activeSwapchain->currentImage : -99);
+                                 e.activeSwapchain ? e.activeSwapchain->currentImage : -99,
+                                 e.fboColorTexCount);
+                }
             }
             for (int i = 0; i < e.colorCount; ++i) {
                 if (colorFmts[i] == VK_FORMAT_UNDEFINED) {

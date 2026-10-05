@@ -431,7 +431,29 @@ bool draw_recording_allowed(const char* who) {
     // recovery; recording vkCmdDraw into a non-recording buffer spams VK_NOT_READY.
     mithril::vk::Backend* b = mithril::vk::backend();
     if (!b->commandBuffer || !b->commandBufferRecording) {
-        ++d_fbuf; d_log("nobuf"); return false;
+        ++d_fbuf;
+        // Deliberately NOT gated on MITHRIL_DUMP_BLIT: this path used to be
+        // completely silent, so a frame in which the command buffer stopped
+        // recording dropped every single draw without leaving a trace. The
+        // visible symptom — frames present at full rate, nothing on screen —
+        // is otherwise indistinguishable from a viewport/shader/layout bug.
+        // One-shot per reason, so the hot path still costs one branch.
+        {
+            static bool warnedNull = false, warnedNotRecording = false;
+            if (!b->commandBuffer) {
+                if (!warnedNull) {
+                    warnedNull = true;
+                    MITHRIL_LOG_WARN("vk", "%s: command buffer is null — draw dropped "
+                                     "(backend not initialised, or lost)", who);
+                }
+            } else if (!warnedNotRecording) {
+                warnedNotRecording = true;
+                MITHRIL_LOG_WARN("vk", "%s: command buffer is not recording — draw "
+                                 "dropped. Something ended or submitted the buffer "
+                                 "between begin_render_pass() and this draw.", who);
+            }
+        }
+        d_log("nobuf"); return false;
     }
     if (!e.passActive) {
         static uint32_t warned = 0;
@@ -2856,7 +2878,26 @@ void backend_draw_indexed(int primitive, int count, int index_type,
     if (std::getenv("MITHRIL_DRAWPATH")) { static uint64_t n_DI=0; ++n_DI; if((n_DI%200)==1) fprintf(stderr,"[DP:DI] #%llu (indexed)\n",(unsigned long long)n_DI); }
     (void)primitive;
     mithril::vk::Backend* b = mithril::vk::backend();
-    if (!b->commandBuffer || !index_buffer) return;
+    if (!b->commandBuffer || !index_buffer) {
+        // This is the one drop path that leaves absolutely no trace: it fires
+        // BEFORE draw_recording_allowed, so none of that function's counters or
+        // warnings see the attempt. index_buffer is null when the bound
+        // element-array buffer has no backend VkBuffer, and the caller cannot
+        // recover because the offset-into-EBO form passes indices == 0, which
+        // its client-pointer fallback rejects. Result: frames present at full
+        // rate with zero draws recorded and nothing in the log.
+        static bool warned = false;
+        if (!warned) {
+            warned = true;
+            MITHRIL_LOG_WARN("vk", "backend_draw_indexed: draw dropped — "
+                             "commandBuffer=%d index_buffer=%d (count=%d, "
+                             "index_type=%d). The element-array buffer has no "
+                             "backend VkBuffer.",
+                             b->commandBuffer != VK_NULL_HANDLE,
+                             index_buffer != VK_NULL_HANDLE, count, index_type);
+        }
+        return;
+    }
     if (!mithril::vk::draw_recording_allowed("backend_draw_indexed")) return;
     mithril::vk::debug_atlas_trace("indexed",count);
     // FIX (root cause AE, CRITICAL): GL_UNSIGNED_BYTE index support.

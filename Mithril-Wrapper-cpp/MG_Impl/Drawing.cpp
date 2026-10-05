@@ -142,7 +142,7 @@ static bool prepare_draw(GLenum mode) {
     bool pd_dump = std::getenv("MITHRIL_DUMP_BLIT") != nullptr;
     static uint64_t pd_att=0,pd_f_prog=0,pd_f_spirv=0,pd_f_att=0,pd_f_pipe=0;
     ++pd_att;
-    #define PD_FAIL(which, why...) do { ++which; if (pd_dump && ((pd_att%120)==0)) { MITHRIL_LOG_WARN("vk-diag","prepareDrawFail att=%llu noprogram=%llu nospirv=%llu noattach=%llu nopipe=%llu drawFBO=%u " why, (unsigned long long)pd_att,(unsigned long long)pd_f_prog,(unsigned long long)pd_f_spirv,(unsigned long long)pd_f_att,(unsigned long long)pd_f_pipe, g_state->currentDrawFBO); } if (std::getenv("MITHRIL_PDFAIL")) { fprintf(stderr,"[PF] att=%llu fbo=%u prog=%u ",(unsigned long long)pd_att,g_state->currentDrawFBO,g_state->currentProgram); fprintf(stderr, why); fprintf(stderr,"\n"); } return false; } while(0)
+    #define PD_FAIL(which, why...) do { ++which; if (pd_dump && ((pd_att%120)==0)) { MITHRIL_LOG_WARN("vk-diag","prepareDrawFail att=%llu noprogram=%llu nospirv=%llu noattach=%llu nopipe=%llu drawFBO=%u " why, (unsigned long long)pd_att,(unsigned long long)pd_f_prog,(unsigned long long)pd_f_spirv,(unsigned long long)pd_f_att,(unsigned long long)pd_f_pipe, g_state->currentDrawFBO); } if (std::getenv("MITHRIL_PDFAIL")) { fprintf(stderr,"[PF] att=%llu fbo=%u prog=%u ",(unsigned long long)pd_att,g_state->currentDrawFBO,g_state->currentProgram); fprintf(stderr, why); fprintf(stderr,"\n"); } do { static bool once_ = false; if (!once_) { once_ = true; fprintf(stderr,"[PDFAIL] att=%llu fbo=%u prog=%u ",(unsigned long long)pd_att,g_state->currentDrawFBO,g_state->currentProgram); fprintf(stderr, why); fprintf(stderr,"\n"); } } while(0); return false; } while(0)
     // Resolve current program + its SPIR-V.
     mithril::Program* prog = mithril::state_get_program(g_state->currentProgram);
     if (!prog || !prog->linked) {
@@ -767,6 +767,24 @@ void glDrawElements(GLenum mode, GLsizei count, GLenum type, const void* indices
     if (ib != VK_NULL_HANDLE) {
         backend_draw_indexed((int)mode, (int)count, index_type_to_int(type),
                              ib, (VkDeviceSize)(intptr_t)indices);
+    } else if (ib_name != 0) {
+        // An element-array buffer IS bound, so `indices` is a byte OFFSET into
+        // it — never a client-side pointer. Two things used to go wrong here:
+        //   * offset 0 (by far the most common: "start of the EBO") made the old
+        //     `else if (indices)` guard false, so the draw was dropped with no
+        //     log line anywhere;
+        //   * any other offset fell into the staging branch, which reinterpreted
+        //     the offset as an address and uploaded arbitrary memory as indices.
+        // Never take the client-pointer path while an EBO is bound; report it.
+        static bool warned = false;
+        if (!warned) {
+            warned = true;
+            MITHRIL_LOG_WARN("gl", "glDrawElements: EBO %u is bound but has no "
+                             "backend VkBuffer (offset=%p count=%d type=0x%x "
+                             "vao=%u) — draw dropped",
+                             ib_name, indices, (int)count, (unsigned)type,
+                             g_state->currentVAO);
+        }
     } else if (indices) {
         // Client-space index pointer: stage into a transient VkBuffer.
         // FIX (root cause AE): GL_UNSIGNED_BYTE 索引按 1 字节/索引 staging，

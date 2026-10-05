@@ -760,10 +760,37 @@ static bool validate_draw_call(GLenum mode, GLsizei count) {
             break;
         default:
             mithril::state_set_error(GL_INVALID_ENUM);
+            // FIX (silent draw drop): this path returned false without emitting
+            // anything, so a host issuing a primitive mode that core profile
+            // removed (GL_QUADS=0x7, GL_QUAD_STRIP=0x8, GL_POLYGON=0x9) got
+            // draws=0 on every frame and a black screen with a completely
+            // clean log — indistinguishable from a rendering bug. Report the
+            // offending mode so the drop is attributable. Rate limited: first
+            // occurrences, each new mode, then 1-in-500.
+            {
+                static uint64_t badModeCount = 0;
+                static GLenum   lastBadMode  = 0;
+                ++badModeCount;
+                if (lastBadMode != mode || badModeCount <= 3 || (badModeCount % 500) == 0) {
+                    lastBadMode = mode;
+                    MITHRIL_LOG_WARN("gl", "validate_draw_call: unsupported primitive "
+                                     "mode=0x%x — draw dropped (occurrence #%llu)",
+                                     (unsigned)mode, (unsigned long long)badModeCount);
+                }
+            }
             return false;
     }
     if (count < 0) {
         mithril::state_set_error(GL_INVALID_VALUE);
+        {
+            static uint64_t badCount = 0;
+            ++badCount;
+            if (badCount <= 3 || (badCount % 500) == 0) {
+                MITHRIL_LOG_WARN("gl", "validate_draw_call: negative count=%d "
+                                 "— draw dropped (occurrence #%llu)",
+                                 (int)count, (unsigned long long)badCount);
+            }
+        }
         return false;
     }
     return true;

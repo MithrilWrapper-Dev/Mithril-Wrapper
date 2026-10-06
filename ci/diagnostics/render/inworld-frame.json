@@ -1,0 +1,16 @@
+{
+  "schema_version":"1.0",
+  "git_sha":"7ed5625533af3faa0853b5c55ad19c646b4fd5a3",
+  "capture_source":"default-framebuffer glReadPixels (in-world, best of warm window)",
+  "pixel_format":"RGBA8",
+  "width":854,
+  "height":480,
+  "warm_window_ticks":240,
+  "uniform_fill":0.7450,
+  "distinct_colors":1195,
+  "gray_stddev":66.3729,
+  "dominant_color":"(0,0,0)",
+  "gl_vendor":"Mithril-Wrapper (EternityQwQ, yitenchen123)",
+  "gl_renderer":"Apple Paravirtual device (Mithril-Wrapper Core) (Apple Paravirtual device, Vulkan 1.2 (MoltenVK))",
+  "gl_version":"4.6.0 §bMithril-Wrapper§r 1.0, Vulkan (MoltenVK) Backend, GIT@7ed5625533af3faa0853b5c55ad19c646b4fd5a3"
+}

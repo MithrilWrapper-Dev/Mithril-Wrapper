@@ -1,0 +1,15 @@
+{
+  "schema_version": "1.0",
+  "built_path": "/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/build-minecraft-e2e-native/libmithril.dylib",
+  "loaded_path": "/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/build-minecraft-e2e-native/libmithril.dylib",
+  "built_sha256": "d26488d6a78b556a2e11c91aec0a0fc3776ed5cda080a0589b0ea051a17e1b95",
+  "loaded_sha256": "d26488d6a78b556a2e11c91aec0a0fc3776ed5cda080a0589b0ea051a17e1b95",
+  "exact_image": true,
+  "context_count": 1,
+  "swap_count": 240,
+  "get_proc_address_count": 0,
+  "gl_vendor": "Mithril-Wrapper (EternityQwQ, yitenchen123)",
+  "gl_renderer": "Apple Paravirtual device (Mithril-Wrapper Core) (Apple Paravirtual device, Vulkan 1.2 (MoltenVK))",
+  "gl_version": "4.6.0 \u00a7bMithril-Wrapper\u00a7r 1.0, Vulkan (MoltenVK) Backend, GIT@7ed5625533af3faa0853b5c55ad19c646b4fd5a3",
+  "red_pixel_ratio": 0.0
+}

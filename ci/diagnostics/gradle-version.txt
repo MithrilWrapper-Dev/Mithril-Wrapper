@@ -1,0 +1,25 @@
+
+Welcome to Gradle 8.10!
+
+Here are the highlights of this release:
+ - Support for Java 23
+ - Faster configuration cache
+ - Better configuration cache reports
+
+For more details see https://docs.gradle.org/8.10/release-notes.html
+
+
+------------------------------------------------------------
+Gradle 8.10
+------------------------------------------------------------
+
+Build time:    2024-08-14 11:07:45 UTC
+Revision:      fef2edbed8af1022cefaf44d4c0514c5f89d7b78
+
+Kotlin:        1.9.24
+Groovy:        3.0.22
+Ant:           Apache Ant(TM) version 1.10.14 compiled on August 16 2023
+Launcher JVM:  21.0.12.1 (Eclipse Adoptium 21.0.12.1+1-LTS)
+Daemon JVM:    /Users/runner/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.12-101.0/arm64/Contents/Home (no JDK specified, using current Java home)
+OS:            Mac OS X 15.7.9 aarch64
+

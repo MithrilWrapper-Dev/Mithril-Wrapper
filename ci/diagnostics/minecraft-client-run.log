@@ -1,0 +1,1168 @@
+Starting a Gradle Daemon (subsequent builds will be faster)
+
+> Configure project :
+Fabric Loom: 1.7.3
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Using of the official minecraft mappings is at your own risk!
+Please make sure to read and understand the following license:
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# (c) 2020 Microsoft Corporation. These mappings are provided "as-is" and you bear the risk of using them. You may copy and use the mappings for development purposes, but you may not redistribute the mappings complete and unmodified. Microsoft makes no warranties, express or implied, with respect to the mappings provided here.  Use and modification of this document or the source code (in any form) of Minecraft: Java Edition is governed by the Minecraft End User License Agreement available at https://account.mojang.com/documents/minecraft_eula.
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+:remapping 50 mods from modImplementation (java-api)
+
+> Task :compileJava
+> Task :processResources
+> Task :classes
+> Task :generateLog4jConfig
+> Task :generateRemapClasspath
+> Task :generateDLIConfig
+> Task :configureLaunch
+> Task :downloadAssets
+> Task :configureClientLaunch
+> Task :jar
+
+> Task :runClient
+[06:05:50] [main/INFO] (FabricLoader/GameProvider) Loading Minecraft 1.21.1 with Fabric Loader 0.16.14
+[06:05:50] [main/INFO] (FabricLoader) Loading 55 mods:
+	- fabric-api 0.116.0+1.21.1
+	- fabric-api-base 0.4.42+6573ed8c19
+	- fabric-api-lookup-api-v1 1.6.71+b559734419
+	- fabric-biome-api-v1 13.0.31+d527f9fd19
+	- fabric-block-api-v1 1.0.22+0af3f5a719
+	- fabric-block-view-api-v2 1.0.11+ebb2264e19
+	- fabric-blockrenderlayer-v1 1.1.52+0af3f5a719
+	- fabric-client-tags-api-v1 1.1.15+6573ed8c19
+	- fabric-command-api-v1 1.2.49+f71b366f19
+	- fabric-command-api-v2 2.2.28+6ced4dd919
+	- fabric-commands-v0 0.2.66+df3654b319
+	- fabric-content-registries-v0 8.0.19+b559734419
+	- fabric-convention-tags-v1 2.1.5+7f945d5b19
+	- fabric-convention-tags-v2 2.11.1+a406e79519
+	- fabric-crash-report-info-v1 0.2.29+0af3f5a719
+	- fabric-data-attachment-api-v1 1.4.3+a15b7ead19
+	- fabric-data-generation-api-v1 20.2.29+16c4ae2519
+	- fabric-dimensions-v1 4.0.0+6fc22b9919
+	- fabric-entity-events-v1 1.7.0+2122d82819
+	- fabric-events-interaction-v0 0.7.13+ba9dae0619
+	- fabric-game-rule-api-v1 1.0.53+6ced4dd919
+	- fabric-gametest-api-v1 2.0.5+6fc22b9919
+	- fabric-item-api-v1 11.1.1+d5debaed19
+	- fabric-item-group-api-v1 4.1.7+def88e3a19
+	- fabric-key-binding-api-v1 1.0.47+0af3f5a719
+	- fabric-keybindings-v0 0.2.45+df3654b319
+	- fabric-lifecycle-events-v1 2.6.0+0865547519
+	- fabric-loot-api-v2 3.0.15+3f89f5a519
+	- fabric-loot-api-v3 1.0.3+3f89f5a519
+	- fabric-message-api-v1 6.0.13+6573ed8c19
+	- fabric-model-loading-api-v1 2.0.0+fe474d6b19
+	- fabric-networking-api-v1 4.3.0+c7469b2119
+	- fabric-object-builder-api-v1 15.2.1+40875a9319
+	- fabric-particles-v1 4.0.2+6573ed8c19
+	- fabric-recipe-api-v1 5.0.14+248df81c19
+	- fabric-registry-sync-v0 5.2.0+34f5d91419
+	- fabric-renderer-api-v1 3.4.0+c705a49c19
+	- fabric-renderer-indigo 1.7.0+c705a49c19
+	- fabric-renderer-registries-v1 3.2.68+df3654b319
+	- fabric-rendering-data-attachment-v1 0.3.49+73761d2e19
+	- fabric-rendering-fluids-v1 3.1.6+1daea21519
+	- fabric-rendering-v0 1.1.71+df3654b319
+	- fabric-rendering-v1 5.0.5+df16efd019
+	- fabric-resource-conditions-api-v1 4.3.0+8dc279b119
+	- fabric-resource-loader-v0 1.3.1+5b5275af19
+	- fabric-screen-api-v1 2.0.25+8b68f1c719
+	- fabric-screen-handler-api-v1 1.3.88+b559734419
+	- fabric-sound-api-v1 1.0.23+6573ed8c19
+	- fabric-transfer-api-v1 5.4.3+c24bd99419
+	- fabric-transitive-access-wideners-v1 6.2.0+45b9699719
+	- fabricloader 0.16.14
+	- java 21
+	- minecraft 1.21.1
+	- mithril_minecraft_e2e 1.0.0
+	- mixinextras 0.4.1
+[06:05:59] [main/INFO] (FabricLoader/Mixin) SpongePowered MIXIN Subsystem Version=0.8.7 Source=file:/Users/runner/.gradle/caches/modules-2/files-2.1/net.fabricmc/sponge-mixin/0.15.5+mixin.0.8.7/22f9eb729e216a091673a574a5906dc1b9027fb3/sponge-mixin-0.15.5+mixin.0.8.7.jar Service=Knot/Fabric Env=CLIENT
+[06:05:59] [main/INFO] (FabricLoader/Mixin) Loaded Fabric development mappings for mixin remapper!
+[06:05:59] [main/INFO] (FabricLoader/Mixin) Compatibility level set to JAVA_17
+[06:05:59] [main/INFO] (FabricLoader/Mixin) Compatibility level set to JAVA_21
+[06:06:00] [main/INFO] (FabricLoader/MixinExtras|Service) Initializing MixinExtras via com.llamalad7.mixinextras.service.MixinExtrasServiceImpl(version=0.4.1).
+[06:06:01] [Datafixer Bootstrap/INFO] (Minecraft) 226 Datafixer optimizations took 293 milliseconds
+[06:06:07] [Render thread/INFO] (Minecraft) Environment: Environment[sessionHost=https://sessionserver.mojang.com, servicesHost=https://api.minecraftservices.com, name=PROD]
+[06:06:07] [Render thread/INFO] (Minecraft) Setting user: Player620
+[06:06:07] [Render thread/INFO] (Indigo) [Indigo] Registering Indigo renderer!
+[06:06:08] [Render thread/INFO] (Minecraft) [STDOUT]: [mithril-e2e] onInitializeClient: mod loaded and initializing
+[06:06:08] [Render thread/INFO] (Minecraft) Backend library: LWJGL version 3.3.3-snapshot
+[mithril W 06:06:10.097 init] Build commit: 7ed5625533af3faa0853b5c55ad19c646b4fd5a3
+[mithril W 06:06:10.570 egl] >> eglGetDisplay
+[mithril W 06:06:10.570 egl] >> eglInitialize
+[mithril W 06:06:11.541 egl] eglInitialize: backend up
+[mithril W 06:06:11.541 egl] >> eglInitialize
+[mithril W 06:06:11.541 egl] >> eglBindAPI
+[mithril W 06:06:11.541 egl] >> eglChooseConfig
+[mithril W 06:06:11.541 egl] eglChooseConfig enter
+[mithril W 06:06:11.541 egl] >> eglCreateWindowSurface
+[mithril W 06:06:11.541 egl] eglCreateWindowSurface enter
+[mithril W 06:06:11.541 egl] ensure_swapchain enter
+[mithril W 06:06:11.541 vk] Swapchain: presentMode=0 (available=2)
+[mithril W 06:06:11.543 egl] eglCreateWindowSurface: swapchain built 854x480
+[mithril W 06:06:11.543 egl] >> eglCreateContext
+[mithril W 06:06:11.543 egl] eglCreateContext enter
+[NEWCTX] ctx=0x600002ebea30 state=0x14a124600 share=0x0
+[mithril W 06:06:11.546 egl] >> eglMakeCurrent
+[mithril W 06:06:11.546 egl] eglMakeCurrent enter
+
+[mithril] FATAL: signal 11 (SIGSEGV), fault addr 0x8
+[mithril]   #00 0x1299d3bb4 /Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/build-minecraft-e2e-native/libmithril.dylib (_ZN7mithril5crash7handlerEiP9__siginfoPv+0xf0)
+[mithril]   #01 0x19e9256a4 /usr/lib/system/libsystem_platform.dylib (_sigtramp+0x38)
+[mithril]   #02 0x116c1d04c ?? (+0x116c1d04c)
+[mithril]   #03 0x116c1cf70 ?? (+0x116c1cf70)
+[mithril]   #04 0x116c1d420 ?? (+0x116c1d420)
+[mithril]   #05 0x116c1d420 ?? (+0x116c1d420)
+[mithril]   #06 0x116c1cf70 ?? (+0x116c1cf70)
+[mithril]   #07 0x116c1cf70 ?? (+0x116c1cf70)
+[mithril]   #08 0x116c1d17c ?? (+0x116c1d17c)
+[mithril]   #09 0x116c1d17c ?? (+0x116c1d17c)
+[mithril]   #10 0x116c1d17c ?? (+0x116c1d17c)
+[mithril]   #11 0x116c1d17c ?? (+0x116c1d17c)
+[mithril]   #12 0x116c1d17c ?? (+0x116c1d17c)
+[mithril]   #13 0x116c1d17c ?? (+0x116c1d17c)
+[mithril]   #14 0x116c1d62c ?? (+0x116c1d62c)
+[mithril]   #15 0x116c1d17c ?? (+0x116c1d17c)
+[mithril]   #16 0x116c1d17c ?? (+0x116c1d17c)
+[mithril]   #17 0x116c1d17c ?? (+0x116c1d17c)
+[mithril]   #18 0x116c1d17c ?? (+0x116c1d17c)
+[mithril]   #19 0x116c18154 ?? (+0x116c18154)
+[mithril]   #20 0x10637bbbc /Users/runner/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.12-101.0/arm64/Contents/Home/lib/server/libjvm.dylib (_ZN9JavaCalls11call_helperEP9JavaValueRK12methodHandleP17JavaCallArgumentsP10JavaThread+0x3d8)
+[mithril]   #21 0x1063f0564 /Users/runner/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.12-101.0/arm64/Contents/Home/lib/server/libjvm.dylib (_ZL17jni_invoke_staticP7JNIEnv_P9JavaValueP8_jobject11JNICallTypeP10_jmethodIDP18JNI_ArgumentPusherP10JavaThread+0x170)
+[mithril]   #22 0x1063f3dd4 /Users/runner/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.12-101.0/arm64/Contents/Home/lib/server/libjvm.dylib (jni_CallStaticVoidMethod+0x108)
+[mithril]   #23 0x1049629ec /Users/runner/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.12-101.0/arm64/Contents/Home/lib/libjli.dylib (JavaMain+0x914)
+[mithril]   #24 0x1049657c4 /Users/runner/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.12-101.0/arm64/Contents/Home/lib/libjli.dylib (__JVMInit_block_invoke+0x48)
+[mithril]   #25 0x19ff890ac /System/Library/Frameworks/Foundation.framework/Versions/C/Foundation (__NSBLOCKOPERATION_IS_CALLING_OUT_TO_A_BLOCK__+0x18)
+[mithril]   #26 0x19ff88f74 /System/Library/Frameworks/Foundation.framework/Versions/C/Foundation (-[NSBlockOperation main]+0x60)
+[mithril]   #27 0x19ff88f0c /System/Library/Frameworks/Foundation.framework/Versions/C/Foundation (__NSOPERATION_IS_INVOKING_MAIN__+0x10)
+[mithril]   #28 0x19ff8827c /System/Library/Frameworks/Foundation.framework/Versions/C/Foundation (-[NSOperation start]+0x280)
+[mithril]   #29 0x19ffc2f78 /System/Library/Frameworks/Foundation.framework/Versions/C/Foundation (__NSThreadPerformPerform+0x108)
+[mithril]   #30 0x19e9d68d4 /System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation (__CFRUNLOOP_IS_CALLING_OUT_TO_A_SOURCE0_PERFORM_FUNCTION__+0x1c)
+[mithril]   #31 0x19e9d6868 /System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation (__CFRunLoopDoSource0+0xac)
+[mithril]   #32 0x19e9d65d4 /System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation (__CFRunLoopDoSources0+0xe8)
+[mithril]   #33 0x19e9d5228 /System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation (__CFRunLoopRun+0x348)
+[mithril]   #34 0x19e9d4858 /System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation (CFRunLoopRunSpecific+0x23c)
+[mithril]   #35 0x104964e64 /Users/runner/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.12-101.0/arm64/Contents/Home/lib/libjli.dylib (CreateExecutionEnvironment+0x194)
+[mithril]   #36 0x104960b58 /Users/runner/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.12-101.0/arm64/Contents/Home/lib/libjli.dylib (JLI_Launch+0x480)
+[mithril]   #37 0x10491bba0 /Users/runner/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.12-101.0/arm64/Contents/Home/bin/java (main+0x194)
+[mithril]   #38 0x19e54ab98 /usr/lib/dyld (start+0x17bc)
+[mithril] end of backtrace
+[mithril W 06:06:12.877 egl] >> eglSwapInterval
+[06:06:13] [Render thread/INFO] (Minecraft) Reloading ResourceManager: vanilla, fabric, fabric-api, fabric-api-base, fabric-api-lookup-api-v1, fabric-biome-api-v1, fabric-block-api-v1, fabric-block-view-api-v2, fabric-blockrenderlayer-v1, fabric-client-tags-api-v1, fabric-command-api-v1, fabric-command-api-v2, fabric-commands-v0, fabric-content-registries-v0, fabric-convention-tags-v1, fabric-convention-tags-v2, fabric-crash-report-info-v1, fabric-data-attachment-api-v1, fabric-data-generation-api-v1, fabric-dimensions-v1, fabric-entity-events-v1, fabric-events-interaction-v0, fabric-game-rule-api-v1, fabric-gametest-api-v1, fabric-item-api-v1, fabric-item-group-api-v1, fabric-key-binding-api-v1, fabric-keybindings-v0, fabric-lifecycle-events-v1, fabric-loot-api-v2, fabric-loot-api-v3, fabric-message-api-v1, fabric-model-loading-api-v1, fabric-networking-api-v1, fabric-object-builder-api-v1, fabric-particles-v1, fabric-recipe-api-v1, fabric-registry-sync-v0, fabric-renderer-api-v1, fabric-renderer-indigo, fabric-renderer-registries-v1, fabric-rendering-data-attachment-v1, fabric-rendering-fluids-v1, fabric-rendering-v0, fabric-rendering-v1, fabric-resource-conditions-api-v1, fabric-resource-loader-v0, fabric-screen-api-v1, fabric-screen-handler-api-v1, fabric-sound-api-v1, fabric-transfer-api-v1, fabric-transitive-access-wideners-v1, fabricloader
+
+[mithril] FATAL: signal 11 (SIGSEGV), fault addr 0x8
+[mithril]   #00 0x1299d3bb4 /Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/build-minecraft-e2e-native/libmithril.dylib (_ZN7mithril5crash7handlerEiP9__siginfoPv+0xf0)
+[mithril]   #01 0x19e9256a4 /usr/lib/system/libsystem_platform.dylib (_sigtramp+0x38)
+[mithril]   #02 0x11787aa84 ?? (+0x11787aa84)
+[mithril] end of backtrace
+
+[mithril] FATAL: signal 10 (SIGBUS), fault addr 0x1049a0000
+[mithril]   #00 0x1299d3bb4 /Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/build-minecraft-e2e-native/libmithril.dylib (_ZN7mithril5crash7handlerEiP9__siginfoPv+0xf0)
+[mithril]   #01 0x19e9256a4 /usr/lib/system/libsystem_platform.dylib (_sigtramp+0x38)
+[mithril]   #02 0x11728e7d4 ?? (+0x11728e7d4)
+[mithril] end of backtrace
+[06:06:13] [Worker-Main-2/INFO] (Minecraft) Found unifont_all_no_pua-15.1.05.hex, loading
+
+[mithril] FATAL: signal 10 (SIGBUS), fault addr 0x1049a0000
+[mithril]   #00 0x1299d3bb4 /Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/build-minecraft-e2e-native/libmithril.dylib (_ZN7mithril5crash7handlerEiP9__siginfoPv+0xf0)
+[mithril]   #01 0x19e9256a4 /usr/lib/system/libsystem_platform.dylib (_sigtramp+0x38)
+[mithril]   #02 0x110cf2164 ?? (+0x110cf2164)
+[mithril] end of backtrace
+[mithril W 06:06:14.094 orient] yflip=1 source=surface-transform
+[06:06:14] [Worker-Main-2/INFO] (Minecraft) Found unifont_jp_patch-15.1.05.hex, loading
+[mithril W 06:06:14.566 egl] >> eglSwapBuffers
+[mithril W 06:06:14.566 egl] eglSwapBuffers enter
+[mithril W 06:06:14.892 vk-diag] B1 present frame #1 clearColor=(0.937 0.196 0.239 1.000) draws=8
+[mithril W 06:06:14.960 egl] >> eglSwapBuffers
+[mithril W 06:06:14.960 egl] eglSwapBuffers enter
+[mithril W 06:06:14.992 vk-diag] B1 present frame #2 clearColor=(0.937 0.196 0.239 1.000) draws=8
+[mithril W 06:06:15.011 egl] >> eglSwapBuffers
+[mithril W 06:06:15.011 egl] eglSwapBuffers enter
+[mithril W 06:06:15.024 vk-diag] B1 present frame #3 clearColor=(0.937 0.196 0.239 1.000) draws=8
+[mithril W 06:06:15.056 egl] >> eglSwapBuffers
+[mithril W 06:06:15.056 egl] eglSwapBuffers enter
+[mithril W 06:06:15.059 vk-diag] B1 present frame #4 clearColor=(0.937 0.196 0.239 1.000) draws=8
+[mithril W 06:06:15.071 egl] >> eglSwapBuffers
+[mithril W 06:06:15.071 egl] eglSwapBuffers enter
+[mithril W 06:06:15.075 vk-diag] B1 present frame #5 clearColor=(0.937 0.196 0.239 1.000) draws=8
+[mithril W 06:06:15.100 egl] >> eglSwapBuffers
+[mithril W 06:06:15.100 egl] eglSwapBuffers enter
+[mithril W 06:06:15.105 vk-diag] B1 present frame #6 clearColor=(0.937 0.196 0.239 1.000) draws=8
+[mithril W 06:06:15.140 egl] >> eglSwapBuffers
+[mithril W 06:06:15.140 egl] eglSwapBuffers enter
+[mithril W 06:06:15.143 vk-diag] B1 present frame #7 clearColor=(0.937 0.196 0.239 1.000) draws=8
+[mithril W 06:06:15.163 egl] >> eglSwapBuffers
+[mithril W 06:06:15.163 egl] eglSwapBuffers enter
+[mithril W 06:06:15.183 vk-diag] B1 present frame #8 clearColor=(0.937 0.196 0.239 1.000) draws=8
+[mithril W 06:06:15.197 egl] >> eglSwapBuffers
+[mithril W 06:06:15.197 egl] eglSwapBuffers enter
+[mithril W 06:06:15.214 vk-diag] B1 present frame #9 clearColor=(0.937 0.196 0.239 1.000) draws=8
+[mithril W 06:06:15.226 egl] >> eglSwapBuffers
+[mithril W 06:06:15.226 egl] eglSwapBuffers enter
+[mithril W 06:06:15.235 vk-diag] B1 present frame #10 clearColor=(0.937 0.196 0.239 1.000) draws=8
+[mithril W 06:06:15.254 egl] >> eglSwapBuffers
+[mithril W 06:06:15.254 egl] eglSwapBuffers enter
+[mithril W 06:06:15.265 vk-diag] B1 present frame #11 clearColor=(0.937 0.196 0.239 1.000) draws=8
+[mithril W 06:06:15.278 egl] >> eglSwapBuffers
+[mithril W 06:06:15.278 egl] eglSwapBuffers enter
+[mithril W 06:06:15.284 vk-diag] B1 present frame #12 clearColor=(0.937 0.196 0.239 1.000) draws=8
+[mithril W 06:06:15.295 egl] >> eglSwapBuffers
+[mithril W 06:06:15.295 egl] eglSwapBuffers enter
+[mithril W 06:06:15.300 vk-diag] B1 present frame #13 clearColor=(0.937 0.196 0.239 1.000) draws=8
+[mithril W 06:06:15.316 egl] >> eglSwapBuffers
+[mithril W 06:06:15.316 egl] eglSwapBuffers enter
+[mithril W 06:06:15.322 vk-diag] B1 present frame #14 clearColor=(0.937 0.196 0.239 1.000) draws=8
+[mithril W 06:06:15.334 egl] >> eglSwapBuffers
+[mithril W 06:06:15.334 egl] eglSwapBuffers enter
+[mithril W 06:06:15.338 vk-diag] B1 present frame #15 clearColor=(0.937 0.196 0.239 1.000) draws=8
+[mithril W 06:06:15.352 egl] >> eglSwapBuffers
+[mithril W 06:06:15.352 egl] eglSwapBuffers enter
+[mithril W 06:06:15.356 vk-diag] B1 present frame #16 clearColor=(0.937 0.196 0.239 1.000) draws=8
+[mithril W 06:06:15.368 egl] >> eglSwapBuffers
+[mithril W 06:06:15.368 egl] eglSwapBuffers enter
+[mithril W 06:06:15.374 vk-diag] B1 present frame #17 clearColor=(0.937 0.196 0.239 1.000) draws=8
+[mithril W 06:06:15.386 egl] >> eglSwapBuffers
+[mithril W 06:06:15.386 egl] eglSwapBuffers enter
+[mithril W 06:06:15.390 vk-diag] B1 present frame #18 clearColor=(0.937 0.196 0.239 1.000) draws=8
+[mithril W 06:06:15.392 egl] >> eglSwapBuffers
+[mithril W 06:06:15.393 egl] eglSwapBuffers enter
+[mithril W 06:06:15.397 vk-diag] B1 present frame #19 clearColor=(0.937 0.196 0.239 1.000) draws=8
+[mithril W 06:06:15.427 egl] >> eglSwapBuffers
+[mithril W 06:06:15.428 egl] eglSwapBuffers enter
+[mithril W 06:06:15.434 vk-diag] B1 present frame #20 clearColor=(0.937 0.196 0.239 1.000) draws=8
+[mithril W 06:06:15.458 egl] >> eglSwapBuffers
+[mithril W 06:06:15.458 egl] eglSwapBuffers enter
+[mithril W 06:06:15.463 vk-diag] B1 present frame #21 clearColor=(0.937 0.196 0.239 1.000) draws=8
+[mithril W 06:06:15.491 egl] >> eglSwapBuffers
+[mithril W 06:06:15.491 egl] eglSwapBuffers enter
+[mithril W 06:06:15.495 vk-diag] B1 present frame #22 clearColor=(0.937 0.196 0.239 1.000) draws=8
+[mithril W 06:06:15.507 egl] >> eglSwapBuffers
+[mithril W 06:06:15.507 egl] eglSwapBuffers enter
+[mithril W 06:06:15.512 vk-diag] B1 present frame #23 clearColor=(0.937 0.196 0.239 1.000) draws=8
+[mithril W 06:06:15.549 egl] >> eglSwapBuffers
+[mithril W 06:06:15.549 egl] eglSwapBuffers enter
+[mithril W 06:06:15.553 vk-diag] B1 present frame #24 clearColor=(0.937 0.196 0.239 1.000) draws=8
+[mithril W 06:06:15.559 egl] >> eglSwapBuffers
+[mithril W 06:06:15.559 egl] eglSwapBuffers enter
+[mithril W 06:06:15.566 vk-diag] B1 present frame #25 clearColor=(0.937 0.196 0.239 1.000) draws=8
+[mithril W 06:06:15.590 egl] >> eglSwapBuffers
+[mithril W 06:06:15.590 egl] eglSwapBuffers enter
+[mithril W 06:06:15.595 vk-diag] B1 present frame #26 clearColor=(0.937 0.196 0.239 1.000) draws=8
+[mithril W 06:06:15.627 egl] >> eglSwapBuffers
+[mithril W 06:06:15.627 egl] eglSwapBuffers enter
+[mithril W 06:06:15.638 vk-diag] B1 present frame #27 clearColor=(0.937 0.196 0.239 1.000) draws=8
+[mithril W 06:06:15.642 egl] >> eglSwapBuffers
+[mithril W 06:06:15.642 egl] eglSwapBuffers enter
+[mithril W 06:06:15.652 vk-diag] B1 present frame #28 clearColor=(0.937 0.196 0.239 1.000) draws=8
+[mithril W 06:06:15.662 egl] >> eglSwapBuffers
+[mithril W 06:06:15.662 egl] eglSwapBuffers enter
+[mithril W 06:06:15.668 vk-diag] B1 present frame #29 clearColor=(0.937 0.196 0.239 1.000) draws=8
+[mithril W 06:06:15.688 egl] >> eglSwapBuffers
+[mithril W 06:06:15.688 egl] eglSwapBuffers enter
+[mithril W 06:06:15.692 vk-diag] B1 present frame #30 clearColor=(0.937 0.196 0.239 1.000) draws=8
+[mithril W 06:06:15.726 egl] >> eglSwapBuffers
+[mithril W 06:06:15.726 egl] eglSwapBuffers enter
+[mithril W 06:06:15.730 vk-diag] B1 present frame #31 clearColor=(0.937 0.196 0.239 1.000) draws=8
+[mithril W 06:06:15.756 egl] >> eglSwapBuffers
+[mithril W 06:06:15.756 egl] eglSwapBuffers enter
+[mithril W 06:06:15.768 vk-diag] B1 present frame #32 clearColor=(0.937 0.196 0.239 1.000) draws=8
+[mithril W 06:06:15.789 egl] >> eglSwapBuffers
+[mithril W 06:06:15.789 egl] eglSwapBuffers enter
+[mithril W 06:06:15.800 vk-diag] B1 present frame #33 clearColor=(0.937 0.196 0.239 1.000) draws=8
+[mithril W 06:06:15.825 egl] >> eglSwapBuffers
+[mithril W 06:06:15.825 egl] eglSwapBuffers enter
+[mithril W 06:06:15.839 vk-diag] B1 present frame #34 clearColor=(0.937 0.196 0.239 1.000) draws=8
+[mithril W 06:06:15.842 egl] >> eglSwapBuffers
+[mithril W 06:06:15.842 egl] eglSwapBuffers enter
+[mithril W 06:06:15.852 vk-diag] B1 present frame #35 clearColor=(0.937 0.196 0.239 1.000) draws=8
+[mithril W 06:06:15.881 egl] >> eglSwapBuffers
+[mithril W 06:06:15.881 egl] eglSwapBuffers enter
+[mithril W 06:06:15.885 vk-diag] B1 present frame #36 clearColor=(0.937 0.196 0.239 1.000) draws=8
+[mithril W 06:06:15.919 egl] >> eglSwapBuffers
+[mithril W 06:06:15.919 egl] eglSwapBuffers enter
+[mithril W 06:06:15.923 vk-diag] B1 present frame #37 clearColor=(0.937 0.196 0.239 1.000) draws=8
+[mithril W 06:06:15.949 egl] >> eglSwapBuffers
+[mithril W 06:06:15.949 egl] eglSwapBuffers enter
+[mithril W 06:06:15.956 vk-diag] B1 present frame #38 clearColor=(0.937 0.196 0.239 1.000) draws=8
+[mithril W 06:06:16.015 egl] >> eglSwapBuffers
+[mithril W 06:06:16.015 egl] eglSwapBuffers enter
+[mithril W 06:06:16.036 vk-diag] B1 present frame #39 clearColor=(0.937 0.196 0.239 1.000) draws=8
+[mithril W 06:06:16.090 egl] >> eglSwapBuffers
+[mithril W 06:06:16.090 egl] eglSwapBuffers enter
+[mithril W 06:06:16.130 vk-diag] B1 present frame #40 clearColor=(0.937 0.196 0.239 1.000) draws=8
+[06:06:16] [Render thread/WARN] (Minecraft) Missing sound for event: minecraft:item.goat_horn.play
+[06:06:16] [Render thread/WARN] (Minecraft) Missing sound for event: minecraft:entity.goat.screaming.horn_break
+[06:06:16] [Render thread/INFO] (Minecraft) OpenAL initialized on device Apple Virtual Sound Device
+[06:06:16] [Render thread/INFO] (Minecraft) Sound engine started
+[06:06:16] [Render thread/INFO] (Minecraft) Created: 1024x512x4 minecraft:textures/atlas/blocks.png-atlas
+[06:06:16] [Render thread/INFO] (Minecraft) Created: 256x256x4 minecraft:textures/atlas/signs.png-atlas
+[06:06:16] [Render thread/INFO] (Minecraft) Created: 512x512x4 minecraft:textures/atlas/banner_patterns.png-atlas
+[06:06:16] [Render thread/INFO] (Minecraft) Created: 512x512x4 minecraft:textures/atlas/shield_patterns.png-atlas
+[06:06:16] [Render thread/INFO] (Minecraft) Created: 1024x1024x4 minecraft:textures/atlas/armor_trims.png-atlas
+[06:06:16] [Render thread/INFO] (Minecraft) Created: 256x256x4 minecraft:textures/atlas/chest.png-atlas
+[06:06:16] [Render thread/INFO] (Minecraft) Created: 128x64x4 minecraft:textures/atlas/decorated_pot.png-atlas
+[06:06:16] [Render thread/INFO] (Minecraft) Created: 512x256x4 minecraft:textures/atlas/beds.png-atlas
+[06:06:16] [Render thread/INFO] (Minecraft) Created: 512x256x4 minecraft:textures/atlas/shulker_boxes.png-atlas
+[06:06:16] [Render thread/INFO] (Minecraft) Created: 512x256x0 minecraft:textures/atlas/particles.png-atlas
+[06:06:16] [Render thread/INFO] (Minecraft) Created: 512x256x0 minecraft:textures/atlas/paintings.png-atlas
+[06:06:16] [Render thread/INFO] (Minecraft) Created: 256x128x0 minecraft:textures/atlas/mob_effects.png-atlas
+[06:06:16] [Render thread/INFO] (Minecraft) Created: 64x64x0 minecraft:textures/atlas/map_decorations.png-atlas
+[06:06:16] [Render thread/INFO] (Minecraft) Created: 1024x512x0 minecraft:textures/atlas/gui.png-atlas
+[mithril W 06:06:17.790 egl] >> eglSwapBuffers
+[mithril W 06:06:17.790 egl] eglSwapBuffers enter
+[mithril W 06:06:17.841 vk-diag] B1 present frame #41 clearColor=(0.937 0.196 0.239 1.000) draws=8
+[mithril W 06:06:17.877 egl] >> eglSwapBuffers
+[mithril W 06:06:17.877 egl] eglSwapBuffers enter
+[mithril W 06:06:18.197 vk-diag] B1 present frame #42 clearColor=(0.937 0.196 0.239 1.000) draws=8
+[mithril W 06:06:18.203 egl] >> eglSwapBuffers
+[mithril W 06:06:18.203 egl] eglSwapBuffers enter
+[mithril W 06:06:18.220 vk-diag] B1 present frame #43 clearColor=(0.937 0.196 0.239 1.000) draws=8
+[mithril W 06:06:18.223 egl] >> eglSwapBuffers
+[mithril W 06:06:18.223 egl] eglSwapBuffers enter
+[mithril W 06:06:18.225 vk-diag] B1 present frame #44 clearColor=(0.937 0.196 0.239 1.000) draws=8
+[mithril W 06:06:18.248 egl] >> eglSwapBuffers
+[mithril W 06:06:18.248 egl] eglSwapBuffers enter
+[mithril W 06:06:18.250 vk-diag] B1 present frame #45 clearColor=(0.937 0.196 0.239 1.000) draws=8
+[mithril W 06:06:18.277 egl] >> eglSwapBuffers
+[mithril W 06:06:18.277 egl] eglSwapBuffers enter
+[mithril W 06:06:18.280 vk-diag] B1 present frame #46 clearColor=(0.937 0.196 0.239 1.000) draws=8
+[mithril W 06:06:18.308 egl] >> eglSwapBuffers
+[mithril W 06:06:18.308 egl] eglSwapBuffers enter
+[mithril W 06:06:18.311 vk-diag] B1 present frame #47 clearColor=(0.937 0.196 0.239 1.000) draws=8
+[mithril W 06:06:18.336 egl] >> eglSwapBuffers
+[mithril W 06:06:18.336 egl] eglSwapBuffers enter
+[mithril W 06:06:18.339 vk-diag] B1 present frame #48 clearColor=(0.937 0.196 0.239 1.000) draws=8
+[mithril W 06:06:18.366 egl] >> eglSwapBuffers
+[mithril W 06:06:18.366 egl] eglSwapBuffers enter
+[mithril W 06:06:18.368 vk-diag] B1 present frame #49 clearColor=(0.937 0.196 0.239 1.000) draws=8
+[mithril W 06:06:18.390 egl] >> eglSwapBuffers
+[mithril W 06:06:18.390 egl] eglSwapBuffers enter
+[mithril W 06:06:18.392 vk-diag] B1 present frame #50 clearColor=(0.937 0.196 0.239 1.000) draws=8
+[mithril W 06:06:18.416 egl] >> eglSwapBuffers
+[mithril W 06:06:18.416 egl] eglSwapBuffers enter
+[mithril W 06:06:18.420 vk-diag] B1 present frame #51 clearColor=(0.937 0.196 0.239 1.000) draws=8
+[mithril W 06:06:18.448 egl] >> eglSwapBuffers
+[mithril W 06:06:18.448 egl] eglSwapBuffers enter
+[mithril W 06:06:18.452 vk-diag] B1 present frame #52 clearColor=(0.937 0.196 0.239 1.000) draws=8
+[mithril W 06:06:18.477 egl] >> eglSwapBuffers
+[mithril W 06:06:18.477 egl] eglSwapBuffers enter
+[mithril W 06:06:18.480 vk-diag] B1 present frame #53 clearColor=(0.937 0.196 0.239 1.000) draws=8
+[mithril W 06:06:18.507 egl] >> eglSwapBuffers
+[mithril W 06:06:18.507 egl] eglSwapBuffers enter
+[mithril W 06:06:18.510 vk-diag] B1 present frame #54 clearColor=(0.937 0.196 0.239 1.000) draws=8
+[mithril W 06:06:18.538 egl] >> eglSwapBuffers
+[mithril W 06:06:18.538 egl] eglSwapBuffers enter
+[mithril W 06:06:18.542 vk-diag] B1 present frame #55 clearColor=(0.937 0.196 0.239 1.000) draws=8
+[mithril W 06:06:18.566 egl] >> eglSwapBuffers
+[mithril W 06:06:18.566 egl] eglSwapBuffers enter
+[mithril W 06:06:18.570 vk-diag] B1 present frame #56 clearColor=(0.937 0.196 0.239 1.000) draws=8
+[mithril W 06:06:18.598 egl] >> eglSwapBuffers
+[mithril W 06:06:18.598 egl] eglSwapBuffers enter
+[mithril W 06:06:18.601 vk-diag] B1 present frame #57 clearColor=(0.937 0.196 0.239 1.000) draws=8
+[mithril W 06:06:18.623 egl] >> eglSwapBuffers
+[mithril W 06:06:18.623 egl] eglSwapBuffers enter
+[mithril W 06:06:18.627 vk-diag] B1 present frame #58 clearColor=(0.937 0.196 0.239 1.000) draws=8
+[mithril W 06:06:18.655 egl] >> eglSwapBuffers
+[mithril W 06:06:18.655 egl] eglSwapBuffers enter
+[mithril W 06:06:18.658 vk-diag] B1 present frame #59 clearColor=(0.937 0.196 0.239 1.000) draws=8
+[mithril W 06:06:18.683 egl] >> eglSwapBuffers
+[mithril W 06:06:18.683 egl] eglSwapBuffers enter
+[mithril W 06:06:18.686 vk-diag] B1 present frame #60 clearColor=(0.937 0.196 0.239 1.000) draws=8
+[mithril W 06:06:18.715 egl] >> eglSwapBuffers
+[mithril W 06:06:18.715 egl] eglSwapBuffers enter
+[mithril W 06:06:18.740 egl] >> eglSwapBuffers
+[mithril W 06:06:18.740 egl] eglSwapBuffers enter
+[mithril W 06:06:18.771 egl] >> eglSwapBuffers
+[mithril W 06:06:18.771 egl] eglSwapBuffers enter
+[mithril W 06:06:19.341 egl] >> eglSwapBuffers
+[mithril W 06:06:19.341 egl] eglSwapBuffers enter
+[mithril W 06:06:19.412 egl] >> eglSwapBuffers
+[mithril W 06:06:19.412 egl] eglSwapBuffers enter
+[mithril W 06:06:19.432 egl] >> eglSwapBuffers
+[mithril W 06:06:19.432 egl] eglSwapBuffers enter
+[mithril W 06:06:19.451 egl] >> eglSwapBuffers
+[mithril W 06:06:19.451 egl] eglSwapBuffers enter
+[mithril W 06:06:19.471 egl] >> eglSwapBuffers
+[mithril W 06:06:19.471 egl] eglSwapBuffers enter
+[mithril W 06:06:19.490 egl] >> eglSwapBuffers
+[mithril W 06:06:19.490 egl] eglSwapBuffers enter
+[mithril W 06:06:19.515 egl] >> eglSwapBuffers
+[mithril W 06:06:19.515 egl] eglSwapBuffers enter
+[mithril W 06:06:19.533 egl] >> eglSwapBuffers
+[mithril W 06:06:19.533 egl] eglSwapBuffers enter
+[mithril W 06:06:19.550 egl] >> eglSwapBuffers
+[mithril W 06:06:19.551 egl] eglSwapBuffers enter
+[mithril W 06:06:19.570 egl] >> eglSwapBuffers
+[mithril W 06:06:19.570 egl] eglSwapBuffers enter
+[mithril W 06:06:19.593 egl] >> eglSwapBuffers
+[mithril W 06:06:19.593 egl] eglSwapBuffers enter
+[mithril W 06:06:19.611 egl] >> eglSwapBuffers
+[mithril W 06:06:19.611 egl] eglSwapBuffers enter
+[mithril W 06:06:19.630 egl] >> eglSwapBuffers
+[mithril W 06:06:19.630 egl] eglSwapBuffers enter
+[mithril W 06:06:19.649 egl] >> eglSwapBuffers
+[mithril W 06:06:19.649 egl] eglSwapBuffers enter
+[mithril W 06:06:19.670 egl] >> eglSwapBuffers
+[mithril W 06:06:19.670 egl] eglSwapBuffers enter
+[mithril W 06:06:19.704 egl] >> eglSwapBuffers
+[mithril W 06:06:19.704 egl] eglSwapBuffers enter
+[mithril W 06:06:19.727 egl] >> eglSwapBuffers
+[mithril W 06:06:19.727 egl] eglSwapBuffers enter
+[mithril W 06:06:19.751 egl] >> eglSwapBuffers
+[mithril W 06:06:19.751 egl] eglSwapBuffers enter
+[mithril W 06:06:19.784 egl] >> eglSwapBuffers
+[mithril W 06:06:19.784 egl] eglSwapBuffers enter
+[mithril W 06:06:19.812 egl] >> eglSwapBuffers
+[mithril W 06:06:19.812 egl] eglSwapBuffers enter
+[mithril W 06:06:19.833 egl] >> eglSwapBuffers
+[mithril W 06:06:19.833 egl] eglSwapBuffers enter
+[mithril W 06:06:19.851 egl] >> eglSwapBuffers
+[mithril W 06:06:19.851 egl] eglSwapBuffers enter
+[mithril W 06:06:19.870 egl] >> eglSwapBuffers
+[mithril W 06:06:19.870 egl] eglSwapBuffers enter
+[mithril W 06:06:19.887 egl] >> eglSwapBuffers
+[mithril W 06:06:19.887 egl] eglSwapBuffers enter
+[mithril W 06:06:19.905 egl] >> eglSwapBuffers
+[mithril W 06:06:19.905 egl] eglSwapBuffers enter
+[mithril W 06:06:19.922 egl] >> eglSwapBuffers
+[mithril W 06:06:19.922 egl] eglSwapBuffers enter
+[mithril W 06:06:19.943 egl] >> eglSwapBuffers
+[mithril W 06:06:19.943 egl] eglSwapBuffers enter
+[mithril W 06:06:19.978 egl] >> eglSwapBuffers
+[mithril W 06:06:19.978 egl] eglSwapBuffers enter
+[mithril W 06:06:20.004 egl] >> eglSwapBuffers
+[mithril W 06:06:20.004 egl] eglSwapBuffers enter
+[mithril W 06:06:20.029 egl] >> eglSwapBuffers
+[mithril W 06:06:20.029 egl] eglSwapBuffers enter
+[mithril W 06:06:20.052 egl] >> eglSwapBuffers
+[mithril W 06:06:20.052 egl] eglSwapBuffers enter
+[mithril W 06:06:20.070 egl] >> eglSwapBuffers
+[mithril W 06:06:20.070 egl] eglSwapBuffers enter
+[mithril W 06:06:20.091 egl] >> eglSwapBuffers
+[mithril W 06:06:20.091 egl] eglSwapBuffers enter
+[mithril W 06:06:20.110 egl] >> eglSwapBuffers
+[mithril W 06:06:20.110 egl] eglSwapBuffers enter
+[mithril W 06:06:20.128 egl] >> eglSwapBuffers
+[mithril W 06:06:20.128 egl] eglSwapBuffers enter
+[mithril W 06:06:20.146 egl] >> eglSwapBuffers
+[mithril W 06:06:20.146 egl] eglSwapBuffers enter
+[mithril W 06:06:20.164 egl] >> eglSwapBuffers
+[mithril W 06:06:20.164 egl] eglSwapBuffers enter
+[mithril W 06:06:20.183 egl] >> eglSwapBuffers
+[mithril W 06:06:20.183 egl] eglSwapBuffers enter
+[mithril W 06:06:20.199 egl] >> eglSwapBuffers
+[mithril W 06:06:20.199 egl] eglSwapBuffers enter
+[mithril W 06:06:20.225 egl] >> eglSwapBuffers
+[mithril W 06:06:20.225 egl] eglSwapBuffers enter
+[mithril W 06:06:20.271 egl] >> eglSwapBuffers
+[mithril W 06:06:20.271 egl] eglSwapBuffers enter
+[mithril W 06:06:20.334 egl] >> eglSwapBuffers
+[mithril W 06:06:20.334 egl] eglSwapBuffers enter
+[mithril W 06:06:20.401 egl] >> eglSwapBuffers
+[mithril W 06:06:20.401 egl] eglSwapBuffers enter
+[mithril W 06:06:20.468 egl] >> eglSwapBuffers
+[mithril W 06:06:20.468 egl] eglSwapBuffers enter
+[mithril W 06:06:20.528 egl] >> eglSwapBuffers
+[mithril W 06:06:20.528 egl] eglSwapBuffers enter
+[mithril W 06:06:20.561 egl] >> eglSwapBuffers
+[mithril W 06:06:20.561 egl] eglSwapBuffers enter
+[mithril W 06:06:20.592 egl] >> eglSwapBuffers
+[mithril W 06:06:20.592 egl] eglSwapBuffers enter
+[mithril W 06:06:20.662 egl] >> eglSwapBuffers
+[mithril W 06:06:20.662 egl] eglSwapBuffers enter
+[mithril W 06:06:20.708 egl] >> eglSwapBuffers
+[mithril W 06:06:20.708 egl] eglSwapBuffers enter
+[mithril W 06:06:20.753 egl] >> eglSwapBuffers
+[mithril W 06:06:20.753 egl] eglSwapBuffers enter
+[mithril W 06:06:20.808 egl] >> eglSwapBuffers
+[mithril W 06:06:20.808 egl] eglSwapBuffers enter
+[mithril W 06:06:20.869 egl] >> eglSwapBuffers
+[mithril W 06:06:20.869 egl] eglSwapBuffers enter
+[mithril W 06:06:20.946 egl] >> eglSwapBuffers
+[mithril W 06:06:20.946 egl] eglSwapBuffers enter
+[mithril W 06:06:21.017 egl] >> eglSwapBuffers
+[mithril W 06:06:21.017 egl] eglSwapBuffers enter
+[mithril W 06:06:21.075 egl] >> eglSwapBuffers
+[mithril W 06:06:21.075 egl] eglSwapBuffers enter
+[mithril W 06:06:21.115 egl] >> eglSwapBuffers
+[mithril W 06:06:21.115 egl] eglSwapBuffers enter
+[mithril W 06:06:21.138 egl] >> eglSwapBuffers
+[mithril W 06:06:21.138 egl] eglSwapBuffers enter
+[mithril W 06:06:21.149 vk-diag] B1 present frame #120 clearColor=(0.000 0.000 0.000 0.000) draws=60
+[mithril W 06:06:21.188 egl] >> eglSwapBuffers
+[mithril W 06:06:21.188 egl] eglSwapBuffers enter
+[mithril W 06:06:21.213 egl] >> eglSwapBuffers
+[mithril W 06:06:21.213 egl] eglSwapBuffers enter
+[06:06:21] [Render thread/INFO] (Minecraft) [STDOUT]: [mithril-e2e] menu OK; red_pixel_ratio=0.0
+[mithril W 06:06:21.313 egl] >> eglSwapBuffers
+[mithril W 06:06:21.313 egl] eglSwapBuffers enter
+[06:06:23] [Render thread/INFO] (Minecraft) Loaded 1290 recipes
+[06:06:23] [Render thread/INFO] (Minecraft) Loaded 1399 advancements
+[06:06:23] [Render thread/INFO] (Minecraft) [STDOUT]: [mithril-e2e] phase -> OPEN_CREATE
+2026-10-06 06:06:23.843 java[5507:17467] forwardInvocation: <NSInvocation: 0x600003854240>
+2026-10-06 06:06:23.843 java[5507:17467] Before CallBooleanMethod
+2026-10-06 06:06:23.844 java[5507:17467] After CallBooleanMethod
+[mithril W 06:06:23.845 egl] >> eglSwapBuffers
+[mithril W 06:06:23.845 egl] eglSwapBuffers enter
+[mithril W 06:06:23.881 egl] >> eglSwapBuffers
+[mithril W 06:06:23.881 egl] eglSwapBuffers enter
+[mithril W 06:06:23.933 egl] >> eglSwapBuffers
+[mithril W 06:06:23.933 egl] eglSwapBuffers enter
+[06:06:24] [Render thread/INFO] (BiomeModificationImpl) Applied 0 biome modifications to 0 of 64 new biomes in 2.570 ms
+[06:06:24] [Server thread/INFO] (Minecraft) Starting integrated minecraft server version 1.21.1
+[06:06:24] [Server thread/INFO] (Minecraft) Generating keypair
+[mithril W 06:06:24.179 egl] >> eglSwapBuffers
+[mithril W 06:06:24.179 egl] eglSwapBuffers enter
+[mithril W 06:06:24.217 egl] >> eglSwapBuffers
+[mithril W 06:06:24.217 egl] eglSwapBuffers enter
+[mithril W 06:06:24.333 egl] >> eglSwapBuffers
+[mithril W 06:06:24.333 egl] eglSwapBuffers enter
+[mithril W 06:06:24.489 egl] >> eglSwapBuffers
+[mithril W 06:06:24.489 egl] eglSwapBuffers enter
+[mithril W 06:06:24.540 egl] >> eglSwapBuffers
+[mithril W 06:06:24.540 egl] eglSwapBuffers enter
+[mithril W 06:06:24.685 egl] >> eglSwapBuffers
+[mithril W 06:06:24.685 egl] eglSwapBuffers enter
+[mithril W 06:06:24.823 egl] >> eglSwapBuffers
+[mithril W 06:06:24.823 egl] eglSwapBuffers enter
+[mithril W 06:06:25.037 egl] >> eglSwapBuffers
+[mithril W 06:06:25.037 egl] eglSwapBuffers enter
+[mithril W 06:06:25.200 egl] >> eglSwapBuffers
+[mithril W 06:06:25.200 egl] eglSwapBuffers enter
+[mithril W 06:06:25.287 egl] >> eglSwapBuffers
+[mithril W 06:06:25.287 egl] eglSwapBuffers enter
+[mithril W 06:06:25.388 egl] >> eglSwapBuffers
+[mithril W 06:06:25.388 egl] eglSwapBuffers enter
+
+[mithril] FATAL: signal 10 (SIGBUS), fault addr 0x1049a0000
+[mithril]   #00 0x1299d3bb4 /Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/build-minecraft-e2e-native/libmithril.dylib (_ZN7mithril5crash7handlerEiP9__siginfoPv+0xf0)
+[mithril]   #01 0x19e9256a4 /usr/lib/system/libsystem_platform.dylib (_sigtramp+0x38)
+[mithril]   #02 0x117b21094 ?? (+0x117b21094)
+[mithril] end of backtrace
+[mithril W 06:06:25.549 egl] >> eglSwapBuffers
+[mithril W 06:06:25.549 egl] eglSwapBuffers enter
+[mithril W 06:06:25.687 egl] >> eglSwapBuffers
+[mithril W 06:06:25.687 egl] eglSwapBuffers enter
+
+[mithril] FATAL: signal 10 (SIGBUS), fault addr 0x1049a0000
+[mithril]   #00 0x1299d3bb4 /Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/build-minecraft-e2e-native/libmithril.dylib (_ZN7mithril5crash7handlerEiP9__siginfoPv+0xf0)
+[mithril]   #01 0x19e9256a4 /usr/lib/system/libsystem_platform.dylib (_sigtramp+0x38)
+[mithril]   #02 0x117b20284 ?? (+0x117b20284)
+[mithril] end of backtrace
+[mithril W 06:06:25.848 egl] >> eglSwapBuffers
+[mithril W 06:06:25.848 egl] eglSwapBuffers enter
+[mithril W 06:06:25.986 egl] >> eglSwapBuffers
+[mithril W 06:06:25.986 egl] eglSwapBuffers enter
+
+[mithril] FATAL: signal 10 (SIGBUS), fault addr 0x1049a0000
+[mithril]   #00 0x1299d3bb4 /Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/build-minecraft-e2e-native/libmithril.dylib (_ZN7mithril5crash7handlerEiP9__siginfoPv+0xf0)
+[mithril]   #01 0x19e9256a4 /usr/lib/system/libsystem_platform.dylib (_sigtramp+0x38)
+[mithril]   #02 0x117b3a758 ?? (+0x117b3a758)
+[mithril] end of backtrace
+[mithril W 06:06:26.124 egl] >> eglSwapBuffers
+[mithril W 06:06:26.124 egl] eglSwapBuffers enter
+[mithril W 06:06:26.155 egl] >> eglSwapBuffers
+[mithril W 06:06:26.155 egl] eglSwapBuffers enter
+[mithril W 06:06:26.307 egl] >> eglSwapBuffers
+[mithril W 06:06:26.307 egl] eglSwapBuffers enter
+[mithril W 06:06:26.444 egl] >> eglSwapBuffers
+[mithril W 06:06:26.444 egl] eglSwapBuffers enter
+[mithril W 06:06:26.525 egl] >> eglSwapBuffers
+[mithril W 06:06:26.525 egl] eglSwapBuffers enter
+[mithril W 06:06:26.655 vk] vkAllocateDescriptorSets failed (program 15, slot 1, gen 147) — descriptor pool exhausted; growing a secondary pool (log 1)
+[mithril W 06:06:26.660 egl] >> eglSwapBuffers
+[mithril W 06:06:26.660 egl] eglSwapBuffers enter
+[mithril W 06:06:26.764 egl] >> eglSwapBuffers
+[mithril W 06:06:26.764 egl] eglSwapBuffers enter
+[mithril W 06:06:26.883 egl] >> eglSwapBuffers
+[mithril W 06:06:26.883 egl] eglSwapBuffers enter
+[mithril W 06:06:26.944 vk] vkAllocateDescriptorSets failed (program 15, slot 0, gen 150) — descriptor pool exhausted; growing a secondary pool (log 2)
+[mithril W 06:06:26.951 egl] >> eglSwapBuffers
+[mithril W 06:06:26.951 egl] eglSwapBuffers enter
+[mithril W 06:06:26.990 egl] >> eglSwapBuffers
+[mithril W 06:06:26.990 egl] eglSwapBuffers enter
+
+[mithril] FATAL: signal 10 (SIGBUS), fault addr 0x1049a0000
+[mithril]   #00 0x1299d3bb4 /Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/build-minecraft-e2e-native/libmithril.dylib (_ZN7mithril5crash7handlerEiP9__siginfoPv+0xf0)
+[mithril]   #01 0x19e9256a4 /usr/lib/system/libsystem_platform.dylib (_sigtramp+0x38)
+[mithril]   #02 0x117b3add0 ?? (+0x117b3add0)
+[mithril] end of backtrace
+[mithril W 06:06:27.045 egl] >> eglSwapBuffers
+[mithril W 06:06:27.045 egl] eglSwapBuffers enter
+[mithril W 06:06:27.093 egl] >> eglSwapBuffers
+[mithril W 06:06:27.093 egl] eglSwapBuffers enter
+[mithril W 06:06:27.188 egl] >> eglSwapBuffers
+[mithril W 06:06:27.188 egl] eglSwapBuffers enter
+[mithril W 06:06:27.330 egl] >> eglSwapBuffers
+[mithril W 06:06:27.330 egl] eglSwapBuffers enter
+[mithril W 06:06:27.424 egl] >> eglSwapBuffers
+[mithril W 06:06:27.424 egl] eglSwapBuffers enter
+[mithril W 06:06:27.493 egl] >> eglSwapBuffers
+[mithril W 06:06:27.493 egl] eglSwapBuffers enter
+[mithril W 06:06:27.658 egl] >> eglSwapBuffers
+[mithril W 06:06:27.658 egl] eglSwapBuffers enter
+[mithril W 06:06:27.815 egl] >> eglSwapBuffers
+[mithril W 06:06:27.815 egl] eglSwapBuffers enter
+[mithril W 06:06:27.943 egl] >> eglSwapBuffers
+[mithril W 06:06:27.943 egl] eglSwapBuffers enter
+[mithril W 06:06:28.142 egl] >> eglSwapBuffers
+[mithril W 06:06:28.142 egl] eglSwapBuffers enter
+[mithril W 06:06:28.206 egl] >> eglSwapBuffers
+[mithril W 06:06:28.206 egl] eglSwapBuffers enter
+[mithril W 06:06:28.251 egl] >> eglSwapBuffers
+[mithril W 06:06:28.251 egl] eglSwapBuffers enter
+[mithril W 06:06:28.400 egl] >> eglSwapBuffers
+[mithril W 06:06:28.400 egl] eglSwapBuffers enter
+[mithril W 06:06:28.560 egl] >> eglSwapBuffers
+[mithril W 06:06:28.560 egl] eglSwapBuffers enter
+[mithril W 06:06:28.691 egl] >> eglSwapBuffers
+[mithril W 06:06:28.691 egl] eglSwapBuffers enter
+[mithril W 06:06:28.781 egl] >> eglSwapBuffers
+[mithril W 06:06:28.781 egl] eglSwapBuffers enter
+[mithril W 06:06:28.880 egl] >> eglSwapBuffers
+[mithril W 06:06:28.880 egl] eglSwapBuffers enter
+[mithril W 06:06:28.965 egl] >> eglSwapBuffers
+[mithril W 06:06:28.965 egl] eglSwapBuffers enter
+[mithril W 06:06:29.009 egl] >> eglSwapBuffers
+[mithril W 06:06:29.009 egl] eglSwapBuffers enter
+[mithril W 06:06:29.057 egl] >> eglSwapBuffers
+[mithril W 06:06:29.057 egl] eglSwapBuffers enter
+[mithril W 06:06:29.210 egl] >> eglSwapBuffers
+[mithril W 06:06:29.210 egl] eglSwapBuffers enter
+[mithril W 06:06:29.380 egl] >> eglSwapBuffers
+[mithril W 06:06:29.380 egl] eglSwapBuffers enter
+[mithril W 06:06:29.436 egl] >> eglSwapBuffers
+[mithril W 06:06:29.436 egl] eglSwapBuffers enter
+[mithril W 06:06:29.571 egl] >> eglSwapBuffers
+[mithril W 06:06:29.571 egl] eglSwapBuffers enter
+[mithril W 06:06:29.741 egl] >> eglSwapBuffers
+[mithril W 06:06:29.741 egl] eglSwapBuffers enter
+[mithril W 06:06:29.909 egl] >> eglSwapBuffers
+[mithril W 06:06:29.909 egl] eglSwapBuffers enter
+
+[mithril] FATAL: signal 11 (SIGSEGV), fault addr 0x8
+[mithril]   #00 0x1299d3bb4 /Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/build-minecraft-e2e-native/libmithril.dylib (_ZN7mithril5crash7handlerEiP9__siginfoPv+0xf0)
+[mithril]   #01 0x19e9256a4 /usr/lib/system/libsystem_platform.dylib (_sigtramp+0x38)
+[mithril]   #02 0x116c1cf70 ?? (+0x116c1cf70)
+[mithril] end of backtrace
+[mithril W 06:06:29.986 egl] >> eglSwapBuffers
+[mithril W 06:06:29.986 egl] eglSwapBuffers enter
+[mithril W 06:06:30.024 egl] >> eglSwapBuffers
+[mithril W 06:06:30.024 egl] eglSwapBuffers enter
+[mithril W 06:06:30.082 egl] >> eglSwapBuffers
+[mithril W 06:06:30.082 egl] eglSwapBuffers enter
+[mithril W 06:06:30.090 vk-diag] B1 present frame #180 clearColor=(0.000 0.000 0.000 0.000) draws=35
+[mithril W 06:06:30.136 egl] >> eglSwapBuffers
+[mithril W 06:06:30.136 egl] eglSwapBuffers enter
+[mithril W 06:06:30.217 egl] >> eglSwapBuffers
+[mithril W 06:06:30.217 egl] eglSwapBuffers enter
+[06:06:30] [Server thread/INFO] (Minecraft) Preparing start region for dimension minecraft:overworld
+[mithril W 06:06:30.334 egl] >> eglSwapBuffers
+[mithril W 06:06:30.334 egl] eglSwapBuffers enter
+[06:06:30] [Render thread/INFO] (Minecraft) Preparing spawn area: 2%
+[mithril W 06:06:30.425 egl] >> eglSwapBuffers
+[mithril W 06:06:30.426 egl] eglSwapBuffers enter
+[mithril W 06:06:30.592 egl] >> eglSwapBuffers
+[mithril W 06:06:30.592 egl] eglSwapBuffers enter
+[mithril W 06:06:30.737 egl] >> eglSwapBuffers
+[mithril W 06:06:30.737 egl] eglSwapBuffers enter
+[06:06:30] [Render thread/INFO] (Minecraft) Preparing spawn area: 2%
+[mithril W 06:06:30.907 egl] >> eglSwapBuffers
+[mithril W 06:06:30.907 egl] eglSwapBuffers enter
+[mithril W 06:06:30.971 egl] >> eglSwapBuffers
+[mithril W 06:06:30.971 egl] eglSwapBuffers enter
+[mithril W 06:06:31.135 egl] >> eglSwapBuffers
+[mithril W 06:06:31.135 egl] eglSwapBuffers enter
+[mithril W 06:06:31.270 egl] >> eglSwapBuffers
+[mithril W 06:06:31.270 egl] eglSwapBuffers enter
+[06:06:31] [Render thread/INFO] (Minecraft) Preparing spawn area: 2%
+[mithril W 06:06:31.378 egl] >> eglSwapBuffers
+[mithril W 06:06:31.378 egl] eglSwapBuffers enter
+[mithril W 06:06:31.465 egl] >> eglSwapBuffers
+[mithril W 06:06:31.465 egl] eglSwapBuffers enter
+[mithril W 06:06:31.580 egl] >> eglSwapBuffers
+[mithril W 06:06:31.580 egl] eglSwapBuffers enter
+[mithril W 06:06:31.685 egl] >> eglSwapBuffers
+[mithril W 06:06:31.685 egl] eglSwapBuffers enter
+[06:06:31] [Render thread/INFO] (Minecraft) Preparing spawn area: 2%
+[mithril W 06:06:31.824 egl] >> eglSwapBuffers
+[mithril W 06:06:31.824 egl] eglSwapBuffers enter
+[mithril W 06:06:32.016 egl] >> eglSwapBuffers
+[mithril W 06:06:32.017 egl] eglSwapBuffers enter
+
+[mithril] FATAL: signal 10 (SIGBUS), fault addr 0x1049a0000
+[mithril]   #00 0x1299d3bb4 /Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/build-minecraft-e2e-native/libmithril.dylib (_ZN7mithril5crash7handlerEiP9__siginfoPv+0xf0)
+[mithril]   #01 0x19e9256a4 /usr/lib/system/libsystem_platform.dylib (_sigtramp+0x38)
+[mithril]   #02 0x117cd8fb8 ?? (+0x117cd8fb8)
+[mithril] end of backtrace
+[mithril W 06:06:32.226 egl] >> eglSwapBuffers
+[mithril W 06:06:32.226 egl] eglSwapBuffers enter
+[06:06:32] [Render thread/INFO] (Minecraft) Preparing spawn area: 2%
+[mithril W 06:06:32.441 egl] >> eglSwapBuffers
+[mithril W 06:06:32.441 egl] eglSwapBuffers enter
+[mithril W 06:06:32.575 egl] >> eglSwapBuffers
+[mithril W 06:06:32.575 egl] eglSwapBuffers enter
+[mithril W 06:06:32.720 egl] >> eglSwapBuffers
+[mithril W 06:06:32.720 egl] eglSwapBuffers enter
+[06:06:32] [Render thread/INFO] (Minecraft) Preparing spawn area: 18%
+[mithril W 06:06:32.855 egl] >> eglSwapBuffers
+[mithril W 06:06:32.855 egl] eglSwapBuffers enter
+[mithril W 06:06:32.978 egl] >> eglSwapBuffers
+[mithril W 06:06:32.978 egl] eglSwapBuffers enter
+[mithril W 06:06:33.023 egl] >> eglSwapBuffers
+[mithril W 06:06:33.023 egl] eglSwapBuffers enter
+[mithril W 06:06:33.243 egl] >> eglSwapBuffers
+[mithril W 06:06:33.243 egl] eglSwapBuffers enter
+[06:06:33] [Render thread/INFO] (Minecraft) Preparing spawn area: 18%
+[mithril W 06:06:33.427 egl] >> eglSwapBuffers
+[mithril W 06:06:33.427 egl] eglSwapBuffers enter
+[mithril W 06:06:33.571 egl] >> eglSwapBuffers
+[mithril W 06:06:33.571 egl] eglSwapBuffers enter
+[mithril W 06:06:33.739 egl] >> eglSwapBuffers
+[mithril W 06:06:33.739 egl] eglSwapBuffers enter
+[06:06:33] [Render thread/INFO] (Minecraft) Preparing spawn area: 51%
+[mithril W 06:06:33.910 egl] >> eglSwapBuffers
+[mithril W 06:06:33.910 egl] eglSwapBuffers enter
+[mithril W 06:06:34.091 egl] >> eglSwapBuffers
+[mithril W 06:06:34.091 egl] eglSwapBuffers enter
+[mithril W 06:06:34.189 egl] >> eglSwapBuffers
+[mithril W 06:06:34.189 egl] eglSwapBuffers enter
+[06:06:34] [Render thread/INFO] (Minecraft) Preparing spawn area: 51%
+[mithril W 06:06:34.352 egl] >> eglSwapBuffers
+[mithril W 06:06:34.352 egl] eglSwapBuffers enter
+[mithril W 06:06:34.474 egl] >> eglSwapBuffers
+[mithril W 06:06:34.474 egl] eglSwapBuffers enter
+[mithril W 06:06:34.525 egl] >> eglSwapBuffers
+[mithril W 06:06:34.525 egl] eglSwapBuffers enter
+[mithril W 06:06:34.620 egl] >> eglSwapBuffers
+[mithril W 06:06:34.620 egl] eglSwapBuffers enter
+[mithril W 06:06:34.790 egl] >> eglSwapBuffers
+[mithril W 06:06:34.790 egl] eglSwapBuffers enter
+[06:06:34] [Render thread/INFO] (Minecraft) Preparing spawn area: 51%
+[mithril W 06:06:34.969 egl] >> eglSwapBuffers
+[mithril W 06:06:34.969 egl] eglSwapBuffers enter
+[mithril W 06:06:35.068 egl] >> eglSwapBuffers
+[mithril W 06:06:35.069 egl] eglSwapBuffers enter
+[mithril W 06:06:35.144 egl] >> eglSwapBuffers
+[mithril W 06:06:35.144 egl] eglSwapBuffers enter
+[mithril W 06:06:35.192 egl] >> eglSwapBuffers
+[mithril W 06:06:35.192 egl] eglSwapBuffers enter
+[06:06:35] [Render thread/INFO] (Minecraft) Preparing spawn area: 51%
+[06:06:35] [Render thread/INFO] (Minecraft) Time elapsed: 5020 ms
+[mithril W 06:06:35.340 egl] >> eglSwapBuffers
+[mithril W 06:06:35.340 egl] eglSwapBuffers enter
+[06:06:35] [Server thread/INFO] (Minecraft) Changing view distance to 12, from 10
+[06:06:35] [Server thread/INFO] (Minecraft) Changing simulation distance to 12, from 0
+
+[mithril] FATAL: signal 11 (SIGSEGV), fault addr 0x8
+[mithril]   #00 0x1299d3bb4 /Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/build-minecraft-e2e-native/libmithril.dylib (_ZN7mithril5crash7handlerEiP9__siginfoPv+0xf0)
+[mithril]   #01 0x19e9256a4 /usr/lib/system/libsystem_platform.dylib (_sigtramp+0x38)
+[mithril]   #02 0x117ddc904 ?? (+0x117ddc904)
+[mithril]   #03 0x116c1cf70 ?? (+0x116c1cf70)
+[mithril]   #04 0x116c1d420 ?? (+0x116c1d420)
+[mithril]   #05 0x116c1cf70 ?? (+0x116c1cf70)
+[mithril]   #06 0x116c1d04c ?? (+0x116c1d04c)
+[mithril]   #07 0x116c1d04c ?? (+0x116c1d04c)
+[mithril]   #08 0x116c1d17c ?? (+0x116c1d17c)
+[mithril]   #09 0x116c1d17c ?? (+0x116c1d17c)
+[mithril]   #10 0x116c1d17c ?? (+0x116c1d17c)
+[mithril]   #11 0x116c1d17c ?? (+0x116c1d17c)
+[mithril]   #12 0x116c1d17c ?? (+0x116c1d17c)
+[mithril]   #13 0x116c1d17c ?? (+0x116c1d17c)
+[mithril]   #14 0x116c1d17c ?? (+0x116c1d17c)
+[mithril]   #15 0x116c1d17c ?? (+0x116c1d17c)
+[mithril]   #16 0x116c1d17c ?? (+0x116c1d17c)
+[mithril]   #17 0x116c1d62c ?? (+0x116c1d62c)
+[mithril]   #18 0x116c1d17c ?? (+0x116c1d17c)
+[mithril]   #19 0x116c18154 ?? (+0x116c18154)
+[mithril]   #20 0x10637bbbc /Users/runner/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.12-101.0/arm64/Contents/Home/lib/server/libjvm.dylib (_ZN9JavaCalls11call_helperEP9JavaValueRK12methodHandleP17JavaCallArgumentsP10JavaThread+0x3d8)
+[mithril]   #21 0x10637aaf4 /Users/runner/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.12-101.0/arm64/Contents/Home/lib/server/libjvm.dylib (_ZN9JavaCalls12call_virtualEP9JavaValueP5KlassP6SymbolS5_P17JavaCallArgumentsP10JavaThread+0x140)
+[mithril]   #22 0x10637abc0 /Users/runner/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.12-101.0/arm64/Contents/Home/lib/server/libjvm.dylib (_ZN9JavaCalls12call_virtualEP9JavaValue6HandleP5KlassP6SymbolS6_P10JavaThread+0x64)
+[mithril]   #23 0x10644a598 /Users/runner/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.12-101.0/arm64/Contents/Home/lib/server/libjvm.dylib (_ZL12thread_entryP10JavaThreadS0_+0x9c)
+[mithril]   #24 0x10638ff04 /Users/runner/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.12-101.0/arm64/Contents/Home/lib/server/libjvm.dylib (_ZN10JavaThread17thread_main_innerEv+0x98)
+[mithril]   #25 0x1068c7750 /Users/runner/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.12-101.0/arm64/Contents/Home/lib/server/libjvm.dylib (_ZN6Thread8call_runEv+0xc8)
+[mithril]   #26 0x1066ea590 /Users/runner/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.12-101.0/arm64/Contents/Home/lib/server/libjvm.dylib (_ZL19thread_native_entryP6Thread+0x118)
+[mithril]   #27 0x19e8ebbc8 /usr/lib/system/libsystem_pthread.dylib (_pthread_start+0x88)
+[mithril]   #28 0x19e8e6b80 /usr/lib/system/libsystem_pthread.dylib (thread_start+0x8)
+[mithril] end of backtrace
+
+[mithril] FATAL: signal 10 (SIGBUS), fault addr 0x1049a0000
+[mithril]   #00 0x1299d3bb4 /Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/build-minecraft-e2e-native/libmithril.dylib (_ZN7mithril5crash7handlerEiP9__siginfoPv+0xf0)
+[mithril]   #01 0x19e9256a4 /usr/lib/system/libsystem_platform.dylib (_sigtramp+0x38)
+[mithril]   #02 0x1178419e0 ?? (+0x1178419e0)
+[mithril] end of backtrace
+
+[mithril] FATAL: signal 11 (SIGSEGV), fault addr 0xc
+[mithril]   #00 0x1299d3bb4 /Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/build-minecraft-e2e-native/libmithril.dylib (_ZN7mithril5crash7handlerEiP9__siginfoPv+0xf0)
+[mithril]   #01 0x19e9256a4 /usr/lib/system/libsystem_platform.dylib (_sigtramp+0x38)
+[mithril]   #02 0x10ffce388 ?? (+0x10ffce388)
+[mithril] end of backtrace
+[06:06:35] [Render thread/INFO] (Minecraft) [STDOUT]: [mithril-e2e] phase -> WAIT_WORLD
+[mithril W 06:06:35.784 egl] >> eglSwapBuffers
+[mithril W 06:06:35.784 egl] eglSwapBuffers enter
+[mithril W 06:06:35.829 egl] >> eglSwapBuffers
+[mithril W 06:06:35.829 egl] eglSwapBuffers enter
+[mithril W 06:06:35.857 egl] >> eglSwapBuffers
+[mithril W 06:06:35.857 egl] eglSwapBuffers enter
+[mithril W 06:06:35.900 egl] >> eglSwapBuffers
+[mithril W 06:06:35.900 egl] eglSwapBuffers enter
+[mithril W 06:06:35.964 egl] >> eglSwapBuffers
+[mithril W 06:06:35.964 egl] eglSwapBuffers enter
+[mithril W 06:06:36.049 egl] >> eglSwapBuffers
+[mithril W 06:06:36.049 egl] eglSwapBuffers enter
+[mithril W 06:06:36.267 egl] >> eglSwapBuffers
+[mithril W 06:06:36.267 egl] eglSwapBuffers enter
+[mithril W 06:06:36.336 egl] >> eglSwapBuffers
+[mithril W 06:06:36.336 egl] eglSwapBuffers enter
+[06:06:36] [Server thread/INFO] (Minecraft) Player620[local:E:df47a83a] logged in with entity id 7 at (0.5, 115.0, 4.5)
+[06:06:36] [Server thread/INFO] (Minecraft) Player620 joined the game
+[mithril W 06:06:36.487 egl] >> eglSwapBuffers
+[mithril W 06:06:36.487 egl] eglSwapBuffers enter
+
+[mithril] FATAL: signal 11 (SIGSEGV), fault addr 0x8
+[mithril]   #00 0x1299d3bb4 /Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/build-minecraft-e2e-native/libmithril.dylib (_ZN7mithril5crash7handlerEiP9__siginfoPv+0xf0)
+[mithril]   #01 0x19e9256a4 /usr/lib/system/libsystem_platform.dylib (_sigtramp+0x38)
+[mithril]   #02 0x117d08f6c ?? (+0x117d08f6c)
+[mithril] end of backtrace
+
+[mithril] FATAL: signal 11 (SIGSEGV), fault addr 0xc
+[mithril]   #00 0x1299d3bb4 /Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/build-minecraft-e2e-native/libmithril.dylib (_ZN7mithril5crash7handlerEiP9__siginfoPv+0xf0)
+[mithril]   #01 0x19e9256a4 /usr/lib/system/libsystem_platform.dylib (_sigtramp+0x38)
+[mithril]   #02 0x116c1cf70 ?? (+0x116c1cf70)
+[mithril]   #03 0x116c1cf70 ?? (+0x116c1cf70)
+[mithril]   #04 0x116c1cf70 ?? (+0x116c1cf70)
+[mithril]   #05 0x116c1cf70 ?? (+0x116c1cf70)
+[mithril]   #06 0x116c1cf70 ?? (+0x116c1cf70)
+[mithril]   #07 0x116c1cf70 ?? (+0x116c1cf70)
+[mithril]   #08 0x117a1695c ?? (+0x117a1695c)
+[mithril] end of backtrace
+[06:06:36] [Render thread/INFO] (Minecraft) Loaded 2 advancements
+[06:06:37] [Render thread/INFO] (Minecraft) [STDOUT]: [mithril-e2e] phase -> INWORLD_WARM
+[mithril W 06:06:37.241 vk] VK_ERROR_FEATURE_NOT_PRESENT: Metal does not support disabling primitive restart.
+
+[mithril] FATAL: signal 11 (SIGSEGV), fault addr 0x8
+[mithril]   #00 0x1299d3bb4 /Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/build-minecraft-e2e-native/libmithril.dylib (_ZN7mithril5crash7handlerEiP9__siginfoPv+0xf0)
+[mithril]   #01 0x19e9256a4 /usr/lib/system/libsystem_platform.dylib (_sigtramp+0x38)
+[mithril]   #02 0x117ea36ec ?? (+0x117ea36ec)
+[mithril] end of backtrace
+
+[mithril] FATAL: signal 11 (SIGSEGV), fault addr 0x8
+[mithril]   #00 0x1299d3bb4 /Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/build-minecraft-e2e-native/libmithril.dylib (_ZN7mithril5crash7handlerEiP9__siginfoPv+0xf0)
+[mithril]   #01 0x19e9256a4 /usr/lib/system/libsystem_platform.dylib (_sigtramp+0x38)
+[mithril]   #02 0x117ea3be4 ?? (+0x117ea3be4)
+[mithril]   #03 0x11771fb0c ?? (+0x11771fb0c)
+[mithril] end of backtrace
+
+[mithril] FATAL: signal 11 (SIGSEGV), fault addr 0xc
+[mithril]   #00 0x1299d3bb4 /Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/build-minecraft-e2e-native/libmithril.dylib (_ZN7mithril5crash7handlerEiP9__siginfoPv+0xf0)
+[mithril]   #01 0x19e9256a4 /usr/lib/system/libsystem_platform.dylib (_sigtramp+0x38)
+[mithril]   #02 0x117e76608 ?? (+0x117e76608)
+[mithril] end of backtrace
+[mithril W 06:06:38.199 vk] sampler layout/resource check tex=42 imgValid=1 viewValid=1 curLayout=0 declLayout=5 levels=1
+[mithril W 06:06:38.237 egl] >> eglSwapBuffers
+[mithril W 06:06:38.237 egl] eglSwapBuffers enter
+
+[mithril] FATAL: signal 11 (SIGSEGV), fault addr 0x8
+[mithril]   #00 0x1299d3bb4 /Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/build-minecraft-e2e-native/libmithril.dylib (_ZN7mithril5crash7handlerEiP9__siginfoPv+0xf0)
+[mithril]   #01 0x19e9256a4 /usr/lib/system/libsystem_platform.dylib (_sigtramp+0x38)
+[mithril]   #02 0x117cf949c ?? (+0x117cf949c)
+[mithril] end of backtrace
+
+[mithril] FATAL: signal 11 (SIGSEGV), fault addr 0x8
+[mithril]   #00 0x1299d3bb4 /Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/build-minecraft-e2e-native/libmithril.dylib (_ZN7mithril5crash7handlerEiP9__siginfoPv+0xf0)
+[mithril]   #01 0x19e9256a4 /usr/lib/system/libsystem_platform.dylib (_sigtramp+0x38)
+[mithril]   #02 0x116c1d04c ?? (+0x116c1d04c)
+[mithril] end of backtrace
+
+[mithril] FATAL: signal 11 (SIGSEGV), fault addr 0x8
+[mithril]   #00 0x1299d3bb4 /Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/build-minecraft-e2e-native/libmithril.dylib (_ZN7mithril5crash7handlerEiP9__siginfoPv+0xf0)
+[mithril]   #01 0x19e9256a4 /usr/lib/system/libsystem_platform.dylib (_sigtramp+0x38)
+[mithril]   #02 0x117d2738c ?? (+0x117d2738c)
+[mithril] end of backtrace
+
+[mithril] FATAL: signal 11 (SIGSEGV), fault addr 0x8
+[mithril]   #00 0x1299d3bb4 /Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/build-minecraft-e2e-native/libmithril.dylib (_ZN7mithril5crash7handlerEiP9__siginfoPv+0xf0)
+[mithril]   #01 0x19e9256a4 /usr/lib/system/libsystem_platform.dylib (_sigtramp+0x38)
+[mithril]   #02 0x117daa00c ?? (+0x117daa00c)
+[mithril]   #03 0x10fa1a684 ?? (+0x10fa1a684)
+[mithril]   #04 0x116c1d04c ?? (+0x116c1d04c)
+[mithril]   #05 0x116c1d17c ?? (+0x116c1d17c)
+[mithril]   #06 0x116c1d17c ?? (+0x116c1d17c)
+[mithril]   #07 0x116c1d17c ?? (+0x116c1d17c)
+[mithril]   #08 0x116c1d17c ?? (+0x116c1d17c)
+[mithril]   #09 0x116c1d17c ?? (+0x116c1d17c)
+[mithril]   #10 0x116c1d17c ?? (+0x116c1d17c)
+[mithril]   #11 0x116c1d17c ?? (+0x116c1d17c)
+[mithril]   #12 0x116c1d17c ?? (+0x116c1d17c)
+[mithril]   #13 0x116c1d62c ?? (+0x116c1d62c)
+[mithril]   #14 0x116c1d17c ?? (+0x116c1d17c)
+[mithril]   #15 0x116c1d17c ?? (+0x116c1d17c)
+[mithril]   #16 0x116c1d17c ?? (+0x116c1d17c)
+[mithril]   #17 0x116c1d17c ?? (+0x116c1d17c)
+[mithril]   #18 0x116c18154 ?? (+0x116c18154)
+[mithril]   #19 0x10637bbbc /Users/runner/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.12-101.0/arm64/Contents/Home/lib/server/libjvm.dylib (_ZN9JavaCalls11call_helperEP9JavaValueRK12methodHandleP17JavaCallArgumentsP10JavaThread+0x3d8)
+[mithril]   #20 0x1063f0564 /Users/runner/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.12-101.0/arm64/Contents/Home/lib/server/libjvm.dylib (_ZL17jni_invoke_staticP7JNIEnv_P9JavaValueP8_jobject11JNICallTypeP10_jmethodIDP18JNI_ArgumentPusherP10JavaThread+0x170)
+[mithril]   #21 0x1063f3dd4 /Users/runner/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.12-101.0/arm64/Contents/Home/lib/server/libjvm.dylib (jni_CallStaticVoidMethod+0x108)
+[mithril]   #22 0x1049629ec /Users/runner/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.12-101.0/arm64/Contents/Home/lib/libjli.dylib (JavaMain+0x914)
+[mithril]   #23 0x1049657c4 /Users/runner/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.12-101.0/arm64/Contents/Home/lib/libjli.dylib (__JVMInit_block_invoke+0x48)
+[mithril]   #24 0x19ff890ac /System/Library/Frameworks/Foundation.framework/Versions/C/Foundation (__NSBLOCKOPERATION_IS_CALLING_OUT_TO_A_BLOCK__+0x18)
+[mithril]   #25 0x19ff88f74 /System/Library/Frameworks/Foundation.framework/Versions/C/Foundation (-[NSBlockOperation main]+0x60)
+[mithril]   #26 0x19ff88f0c /System/Library/Frameworks/Foundation.framework/Versions/C/Foundation (__NSOPERATION_IS_INVOKING_MAIN__+0x10)
+[mithril]   #27 0x19ff8827c /System/Library/Frameworks/Foundation.framework/Versions/C/Foundation (-[NSOperation start]+0x280)
+[mithril]   #28 0x19ffc2f78 /System/Library/Frameworks/Foundation.framework/Versions/C/Foundation (__NSThreadPerformPerform+0x108)
+[mithril]   #29 0x19e9d68d4 /System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation (__CFRUNLOOP_IS_CALLING_OUT_TO_A_SOURCE0_PERFORM_FUNCTION__+0x1c)
+[mithril]   #30 0x19e9d6868 /System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation (__CFRunLoopDoSource0+0xac)
+[mithril]   #31 0x19e9d65d4 /System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation (__CFRunLoopDoSources0+0xe8)
+[mithril]   #32 0x19e9d5228 /System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation (__CFRunLoopRun+0x348)
+[mithril]   #33 0x19e9d4858 /System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation (CFRunLoopRunSpecific+0x23c)
+[mithril]   #34 0x104964e64 /Users/runner/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.12-101.0/arm64/Contents/Home/lib/libjli.dylib (CreateExecutionEnvironment+0x194)
+[mithril]   #35 0x104960b58 /Users/runner/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.12-101.0/arm64/Contents/Home/lib/libjli.dylib (JLI_Launch+0x480)
+[mithril]   #36 0x10491bba0 /Users/runner/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.12-101.0/arm64/Contents/Home/bin/java (main+0x194)
+[mithril]   #37 0x19e54ab98 /usr/lib/dyld (start+0x17bc)
+[mithril] end of backtrace
+
+[mithril] FATAL: signal 11 (SIGSEGV), fault addr 0x8
+[mithril]   #00 0x1299d3bb4 /Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/build-minecraft-e2e-native/libmithril.dylib (_ZN7mithril5crash7handlerEiP9__siginfoPv+0xf0)
+[mithril]   #01 0x19e9256a4 /usr/lib/system/libsystem_platform.dylib (_sigtramp+0x38)
+[mithril]   #02 0x117d2a384 ?? (+0x117d2a384)
+[mithril] end of backtrace
+
+[mithril] FATAL: signal 10 (SIGBUS), fault addr 0x1049a0000
+[mithril]   #00 0x1299d3bb4 /Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/build-minecraft-e2e-native/libmithril.dylib (_ZN7mithril5crash7handlerEiP9__siginfoPv+0xf0)
+[mithril]   #01 0x19e9256a4 /usr/lib/system/libsystem_platform.dylib (_sigtramp+0x38)
+[mithril]   #02 0x117da2978 ?? (+0x117da2978)
+[mithril] end of backtrace
+[mithril W 06:06:38.679 vk] sampler layout/resource check tex=42 imgValid=1 viewValid=1 curLayout=0 declLayout=5 levels=1
+[mithril W 06:06:38.796 egl] >> eglSwapBuffers
+[mithril W 06:06:38.796 egl] eglSwapBuffers enter
+
+[mithril] FATAL: signal 10 (SIGBUS), fault addr 0x1049a0000
+[mithril]   #00 0x1299d3bb4 /Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/build-minecraft-e2e-native/libmithril.dylib (_ZN7mithril5crash7handlerEiP9__siginfoPv+0xf0)
+[mithril]   #01 0x19e9256a4 /usr/lib/system/libsystem_platform.dylib (_sigtramp+0x38)
+[mithril]   #02 0x117ec5ae0 ?? (+0x117ec5ae0)
+[mithril] end of backtrace
+
+[mithril] FATAL: signal 11 (SIGSEGV), fault addr 0x8
+[mithril]   #00 0x1299d3bb4 /Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/build-minecraft-e2e-native/libmithril.dylib (_ZN7mithril5crash7handlerEiP9__siginfoPv+0xf0)
+[mithril]   #01 0x19e9256a4 /usr/lib/system/libsystem_platform.dylib (_sigtramp+0x38)
+[mithril]   #02 0x116c1cf70 ?? (+0x116c1cf70)
+[mithril] end of backtrace
+[mithril W 06:06:39.986 vk] sampler layout/resource check tex=42 imgValid=1 viewValid=1 curLayout=0 declLayout=5 levels=1
+
+[mithril] FATAL: signal 10 (SIGBUS), fault addr 0x1049a0000
+[mithril]   #00 0x1299d3bb4 /Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/build-minecraft-e2e-native/libmithril.dylib (_ZN7mithril5crash7handlerEiP9__siginfoPv+0xf0)
+[mithril]   #01 0x19e9256a4 /usr/lib/system/libsystem_platform.dylib (_sigtramp+0x38)
+[mithril]   #02 0x117de4d5c ?? (+0x117de4d5c)
+[mithril] end of backtrace
+[mithril W 06:06:40.135 egl] >> eglSwapBuffers
+[mithril W 06:06:40.135 egl] eglSwapBuffers enter
+[mithril W 06:06:40.576 vk] sampler layout/resource check tex=42 imgValid=1 viewValid=1 curLayout=0 declLayout=5 levels=1
+[mithril W 06:06:40.694 egl] >> eglSwapBuffers
+[mithril W 06:06:40.694 egl] eglSwapBuffers enter
+[mithril W 06:06:41.207 vk] sampler layout/resource check tex=42 imgValid=1 viewValid=1 curLayout=0 declLayout=5 levels=1
+[mithril W 06:06:41.317 egl] >> eglSwapBuffers
+[mithril W 06:06:41.317 egl] eglSwapBuffers enter
+
+[mithril] FATAL: signal 10 (SIGBUS), fault addr 0x1049a0000
+[mithril]   #00 0x1299d3bb4 /Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/build-minecraft-e2e-native/libmithril.dylib (_ZN7mithril5crash7handlerEiP9__siginfoPv+0xf0)
+[mithril]   #01 0x19e9256a4 /usr/lib/system/libsystem_platform.dylib (_sigtramp+0x38)
+[mithril]   #02 0x111546094 ?? (+0x111546094)
+[mithril]   #03 0x116c1d17c ?? (+0x116c1d17c)
+[mithril]   #04 0x116c1d17c ?? (+0x116c1d17c)
+[mithril]   #05 0x116c1d62c ?? (+0x116c1d62c)
+[mithril]   #06 0x116c1d17c ?? (+0x116c1d17c)
+[mithril]   #07 0x116c1d62c ?? (+0x116c1d62c)
+[mithril]   #08 0x116c1d17c ?? (+0x116c1d17c)
+[mithril]   #09 0x116c1d17c ?? (+0x116c1d17c)
+[mithril]   #10 0x116c1d17c ?? (+0x116c1d17c)
+[mithril]   #11 0x116c1d17c ?? (+0x116c1d17c)
+[mithril]   #12 0x116c1d17c ?? (+0x116c1d17c)
+[mithril]   #13 0x116c1d17c ?? (+0x116c1d17c)
+[mithril]   #14 0x116c1d17c ?? (+0x116c1d17c)
+[mithril]   #15 0x116c1d62c ?? (+0x116c1d62c)
+[mithril]   #16 0x116c1d17c ?? (+0x116c1d17c)
+[mithril]   #17 0x116c1d17c ?? (+0x116c1d17c)
+[mithril]   #18 0x116c1d17c ?? (+0x116c1d17c)
+[mithril]   #19 0x116c1d17c ?? (+0x116c1d17c)
+[mithril]   #20 0x116c18154 ?? (+0x116c18154)
+[mithril]   #21 0x10637bbbc /Users/runner/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.12-101.0/arm64/Contents/Home/lib/server/libjvm.dylib (_ZN9JavaCalls11call_helperEP9JavaValueRK12methodHandleP17JavaCallArgumentsP10JavaThread+0x3d8)
+[mithril]   #22 0x1063f0564 /Users/runner/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.12-101.0/arm64/Contents/Home/lib/server/libjvm.dylib (_ZL17jni_invoke_staticP7JNIEnv_P9JavaValueP8_jobject11JNICallTypeP10_jmethodIDP18JNI_ArgumentPusherP10JavaThread+0x170)
+[mithril]   #23 0x1063f3dd4 /Users/runner/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.12-101.0/arm64/Contents/Home/lib/server/libjvm.dylib (jni_CallStaticVoidMethod+0x108)
+[mithril]   #24 0x1049629ec /Users/runner/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.12-101.0/arm64/Contents/Home/lib/libjli.dylib (JavaMain+0x914)
+[mithril]   #25 0x1049657c4 /Users/runner/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.12-101.0/arm64/Contents/Home/lib/libjli.dylib (__JVMInit_block_invoke+0x48)
+[mithril]   #26 0x19ff890ac /System/Library/Frameworks/Foundation.framework/Versions/C/Foundation (__NSBLOCKOPERATION_IS_CALLING_OUT_TO_A_BLOCK__+0x18)
+[mithril]   #27 0x19ff88f74 /System/Library/Frameworks/Foundation.framework/Versions/C/Foundation (-[NSBlockOperation main]+0x60)
+[mithril]   #28 0x19ff88f0c /System/Library/Frameworks/Foundation.framework/Versions/C/Foundation (__NSOPERATION_IS_INVOKING_MAIN__+0x10)
+[mithril]   #29 0x19ff8827c /System/Library/Frameworks/Foundation.framework/Versions/C/Foundation (-[NSOperation start]+0x280)
+[mithril]   #30 0x19ffc2f78 /System/Library/Frameworks/Foundation.framework/Versions/C/Foundation (__NSThreadPerformPerform+0x108)
+[mithril]   #31 0x19e9d68d4 /System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation (__CFRUNLOOP_IS_CALLING_OUT_TO_A_SOURCE0_PERFORM_FUNCTION__+0x1c)
+[mithril]   #32 0x19e9d6868 /System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation (__CFRunLoopDoSource0+0xac)
+[mithril]   #33 0x19e9d65d4 /System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation (__CFRunLoopDoSources0+0xe8)
+[mithril]   #34 0x19e9d5228 /System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation (__CFRunLoopRun+0x348)
+[mithril]   #35 0x19e9d4858 /System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation (CFRunLoopRunSpecific+0x23c)
+[mithril]   #36 0x104964e64 /Users/runner/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.12-101.0/arm64/Contents/Home/lib/libjli.dylib (CreateExecutionEnvironment+0x194)
+[mithril]   #37 0x104960b58 /Users/runner/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.12-101.0/arm64/Contents/Home/lib/libjli.dylib (JLI_Launch+0x480)
+[mithril]   #38 0x10491bba0 /Users/runner/hostedtoolcache/Java_Temurin-Hotspot_jdk/21.0.12-101.0/arm64/Contents/Home/bin/java (main+0x194)
+[mithril]   #39 0x19e54ab98 /usr/lib/dyld (start+0x17bc)
+[mithril] end of backtrace
+[06:06:41] [Render thread/INFO] (Minecraft) [STDOUT]: [mithril-e2e] warm tick=40 best_fill=0.7894 best_distinct=2996 best_stddev=46.8350
+[mithril W 06:06:41.616 vk] sampler layout/resource check tex=42 imgValid=1 viewValid=1 curLayout=0 declLayout=5 levels=1
+[mithril W 06:06:41.728 egl] >> eglSwapBuffers
+[mithril W 06:06:41.728 egl] eglSwapBuffers enter
+
+[mithril] FATAL: signal 10 (SIGBUS), fault addr 0x1049a0000
+[mithril]   #00 0x1299d3bb4 /Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/build-minecraft-e2e-native/libmithril.dylib (_ZN7mithril5crash7handlerEiP9__siginfoPv+0xf0)
+[mithril]   #01 0x19e9256a4 /usr/lib/system/libsystem_platform.dylib (_sigtramp+0x38)
+[mithril]   #02 0x117b941c8 ?? (+0x117b941c8)
+[mithril] end of backtrace
+[mithril W 06:06:41.837 vk] sampler layout/resource check tex=42 imgValid=1 viewValid=1 curLayout=0 declLayout=5 levels=1
+[mithril W 06:06:41.889 egl] >> eglSwapBuffers
+[mithril W 06:06:41.889 egl] eglSwapBuffers enter
+[mithril W 06:06:42.092 vk] sampler layout/resource check tex=42 imgValid=1 viewValid=1 curLayout=0 declLayout=5 levels=1
+[mithril W 06:06:42.192 egl] >> eglSwapBuffers
+[mithril W 06:06:42.192 egl] eglSwapBuffers enter
+[mithril W 06:06:42.331 vk] vkAllocateDescriptorSets failed (program 14, slot 1, gen 245) — descriptor pool exhausted; growing a secondary pool (log 3)
+[mithril W 06:06:42.350 vk] sampler layout/resource check tex=42 imgValid=1 viewValid=1 curLayout=0 declLayout=5 levels=1
+[mithril W 06:06:42.407 egl] >> eglSwapBuffers
+[mithril W 06:06:42.407 egl] eglSwapBuffers enter
+[mithril W 06:06:42.576 egl] >> eglSwapBuffers
+[mithril W 06:06:42.576 egl] eglSwapBuffers enter
+[mithril W 06:06:42.718 egl] >> eglSwapBuffers
+[mithril W 06:06:42.718 egl] eglSwapBuffers enter
+[mithril W 06:06:42.728 vk-diag] B1 present frame #240 clearColor=(0.000 0.000 0.000 0.000) draws=0
+[mithril W 06:06:42.908 egl] >> eglSwapBuffers
+[mithril W 06:06:42.908 egl] eglSwapBuffers enter
+[mithril W 06:06:43.034 egl] >> eglSwapBuffers
+[mithril W 06:06:43.034 egl] eglSwapBuffers enter
+[06:06:43] [Render thread/INFO] (Minecraft) [STDOUT]: [mithril-e2e] warm tick=80 best_fill=0.7888 best_distinct=2510 best_stddev=50.3050
+[mithril W 06:06:43.222 egl] >> eglSwapBuffers
+[mithril W 06:06:43.222 egl] eglSwapBuffers enter
+[mithril W 06:06:43.810 egl] >> eglSwapBuffers
+[mithril W 06:06:43.810 egl] eglSwapBuffers enter
+[mithril W 06:06:43.945 egl] >> eglSwapBuffers
+[mithril W 06:06:43.945 egl] eglSwapBuffers enter
+[mithril W 06:06:44.119 egl] >> eglSwapBuffers
+[mithril W 06:06:44.119 egl] eglSwapBuffers enter
+[mithril W 06:06:44.250 egl] >> eglSwapBuffers
+[mithril W 06:06:44.251 egl] eglSwapBuffers enter
+[mithril W 06:06:44.446 egl] >> eglSwapBuffers
+[mithril W 06:06:44.446 egl] eglSwapBuffers enter
+[mithril W 06:06:44.574 egl] >> eglSwapBuffers
+[mithril W 06:06:44.574 egl] eglSwapBuffers enter
+[mithril W 06:06:44.738 egl] >> eglSwapBuffers
+[mithril W 06:06:44.738 egl] eglSwapBuffers enter
+
+[mithril] FATAL: signal 11 (SIGSEGV), fault addr 0x8
+[mithril]   #00 0x1299d3bb4 /Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/build-minecraft-e2e-native/libmithril.dylib (_ZN7mithril5crash7handlerEiP9__siginfoPv+0xf0)
+[mithril]   #01 0x19e9256a4 /usr/lib/system/libsystem_platform.dylib (_sigtramp+0x38)
+[mithril]   #02 0x1115123bc ?? (+0x1115123bc)
+[mithril] end of backtrace
+
+[mithril] FATAL: signal 11 (SIGSEGV), fault addr 0x8
+[mithril]   #00 0x1299d3bb4 /Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/build-minecraft-e2e-native/libmithril.dylib (_ZN7mithril5crash7handlerEiP9__siginfoPv+0xf0)
+[mithril]   #01 0x19e9256a4 /usr/lib/system/libsystem_platform.dylib (_sigtramp+0x38)
+[mithril]   #02 0x116c1cf70 ?? (+0x116c1cf70)
+[mithril]   #03 0x11150f4e4 ?? (+0x11150f4e4)
+[mithril] end of backtrace
+[mithril W 06:06:44.966 egl] >> eglSwapBuffers
+[mithril W 06:06:44.966 egl] eglSwapBuffers enter
+[mithril W 06:06:45.105 egl] >> eglSwapBuffers
+[mithril W 06:06:45.105 egl] eglSwapBuffers enter
+[06:06:45] [Render thread/INFO] (Minecraft) [STDOUT]: [mithril-e2e] warm tick=120 best_fill=0.7463 best_distinct=2139 best_stddev=63.9886
+[mithril W 06:06:45.326 egl] >> eglSwapBuffers
+[mithril W 06:06:45.326 egl] eglSwapBuffers enter
+[mithril W 06:06:45.549 egl] >> eglSwapBuffers
+[mithril W 06:06:45.549 egl] eglSwapBuffers enter
+[mithril W 06:06:45.720 egl] >> eglSwapBuffers
+[mithril W 06:06:45.720 egl] eglSwapBuffers enter
+[mithril W 06:06:46.050 egl] >> eglSwapBuffers
+[mithril W 06:06:46.051 egl] eglSwapBuffers enter
+[mithril W 06:06:46.314 egl] >> eglSwapBuffers
+[mithril W 06:06:46.314 egl] eglSwapBuffers enter
+[mithril W 06:06:46.518 egl] >> eglSwapBuffers
+[mithril W 06:06:46.518 egl] eglSwapBuffers enter
+[mithril W 06:06:46.721 egl] >> eglSwapBuffers
+[mithril W 06:06:46.722 egl] eglSwapBuffers enter
+[mithril W 06:06:46.878 egl] >> eglSwapBuffers
+[mithril W 06:06:46.878 egl] eglSwapBuffers enter
+[mithril W 06:06:47.103 egl] >> eglSwapBuffers
+[mithril W 06:06:47.103 egl] eglSwapBuffers enter
+[06:06:47] [Render thread/INFO] (Minecraft) [STDOUT]: [mithril-e2e] warm tick=160 best_fill=0.7459 best_distinct=1765 best_stddev=65.0275
+[mithril W 06:06:47.381 egl] >> eglSwapBuffers
+[mithril W 06:06:47.381 egl] eglSwapBuffers enter
+[mithril W 06:06:47.507 egl] >> eglSwapBuffers
+[mithril W 06:06:47.507 egl] eglSwapBuffers enter
+[mithril W 06:06:47.629 egl] >> eglSwapBuffers
+[mithril W 06:06:47.629 egl] eglSwapBuffers enter
+[mithril W 06:06:47.743 egl] >> eglSwapBuffers
+[mithril W 06:06:47.743 egl] eglSwapBuffers enter
+[mithril W 06:06:47.838 egl] >> eglSwapBuffers
+[mithril W 06:06:47.838 egl] eglSwapBuffers enter
+[mithril W 06:06:47.999 egl] >> eglSwapBuffers
+[mithril W 06:06:47.999 egl] eglSwapBuffers enter
+[mithril W 06:06:48.228 egl] >> eglSwapBuffers
+[mithril W 06:06:48.228 egl] eglSwapBuffers enter
+[mithril W 06:06:48.382 egl] >> eglSwapBuffers
+[mithril W 06:06:48.383 egl] eglSwapBuffers enter
+[mithril W 06:06:48.508 egl] >> eglSwapBuffers
+[mithril W 06:06:48.508 egl] eglSwapBuffers enter
+[mithril W 06:06:48.651 egl] >> eglSwapBuffers
+[mithril W 06:06:48.651 egl] eglSwapBuffers enter
+[mithril W 06:06:48.795 egl] >> eglSwapBuffers
+[mithril W 06:06:48.795 egl] eglSwapBuffers enter
+[mithril W 06:06:48.903 egl] >> eglSwapBuffers
+[mithril W 06:06:48.903 egl] eglSwapBuffers enter
+[mithril W 06:06:49.042 egl] >> eglSwapBuffers
+[mithril W 06:06:49.042 egl] eglSwapBuffers enter
+[mithril W 06:06:49.233 egl] >> eglSwapBuffers
+[mithril W 06:06:49.233 egl] eglSwapBuffers enter
+[06:06:49] [Render thread/INFO] (Minecraft) [STDOUT]: [mithril-e2e] warm tick=200 best_fill=0.7455 best_distinct=1395 best_stddev=65.8519
+[mithril W 06:06:49.343 egl] >> eglSwapBuffers
+[mithril W 06:06:49.343 egl] eglSwapBuffers enter
+[mithril W 06:06:49.454 egl] >> eglSwapBuffers
+[mithril W 06:06:49.454 egl] eglSwapBuffers enter
+[mithril W 06:06:49.575 egl] >> eglSwapBuffers
+[mithril W 06:06:49.575 egl] eglSwapBuffers enter
+[mithril W 06:06:49.759 egl] >> eglSwapBuffers
+[mithril W 06:06:49.759 egl] eglSwapBuffers enter
+[mithril W 06:06:49.882 egl] >> eglSwapBuffers
+[mithril W 06:06:49.882 egl] eglSwapBuffers enter
+[mithril W 06:06:50.001 egl] >> eglSwapBuffers
+[mithril W 06:06:50.001 egl] eglSwapBuffers enter
+[mithril W 06:06:50.157 egl] >> eglSwapBuffers
+[mithril W 06:06:50.157 egl] eglSwapBuffers enter
+[mithril W 06:06:50.356 egl] >> eglSwapBuffers
+[mithril W 06:06:50.356 egl] eglSwapBuffers enter
+[mithril W 06:06:50.501 egl] >> eglSwapBuffers
+[mithril W 06:06:50.502 egl] eglSwapBuffers enter
+[mithril W 06:06:50.627 egl] >> eglSwapBuffers
+[mithril W 06:06:50.627 egl] eglSwapBuffers enter
+[mithril W 06:06:50.777 egl] >> eglSwapBuffers
+[mithril W 06:06:50.777 egl] eglSwapBuffers enter
+[mithril W 06:06:50.941 egl] >> eglSwapBuffers
+[mithril W 06:06:50.941 egl] eglSwapBuffers enter
+[mithril W 06:06:51.098 egl] >> eglSwapBuffers
+[mithril W 06:06:51.098 egl] eglSwapBuffers enter
+[06:06:51] [Render thread/INFO] (Minecraft) [STDOUT]: [mithril-e2e] warm tick=240 best_fill=0.7450 best_distinct=1195 best_stddev=66.3729
+[06:06:51] [Render thread/INFO] (Minecraft) [STDOUT]: [mithril-e2e] BEST in-world frame 854x480 uniform_fill=0.7450 distinct=1195 gray_stddev=66.3729 identity=true content=true
+[06:06:51] [Render thread/INFO] (Minecraft) [STDOUT]: [mithril-e2e] ALL GATES PASSED; exiting client (code 0)
+
+[mithril] FATAL: signal 11 (SIGSEGV), fault addr 0x8
+[mithril]   #00 0x1299d3bb4 /Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/build-minecraft-e2e-native/libmithril.dylib (_ZN7mithril5crash7handlerEiP9__siginfoPv+0xf0)
+[mithril]   #01 0x19e9256a4 /usr/lib/system/libsystem_platform.dylib (_sigtramp+0x38)
+[mithril]   #02 0x117ac3f0c ?? (+0x117ac3f0c)
+[mithril] end of backtrace
+
+[mithril] FATAL: signal 11 (SIGSEGV), fault addr 0x8
+[mithril]   #00 0x1299d3bb4 /Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/build-minecraft-e2e-native/libmithril.dylib (_ZN7mithril5crash7handlerEiP9__siginfoPv+0xf0)
+[mithril]   #01 0x19e9256a4 /usr/lib/system/libsystem_platform.dylib (_sigtramp+0x38)
+[mithril]   #02 0x117d28df0 ?? (+0x117d28df0)
+[mithril] end of backtrace
+gradle/actions: Writing build results to /Users/runner/work/_temp/.gradle-actions/build-results/__run_6-1791266652809.json
+
+BUILD SUCCESSFUL in 2m 46s
+8 actionable tasks: 8 executed
+[mithril-e2e] gradle runClient exit=0 saw_present=1

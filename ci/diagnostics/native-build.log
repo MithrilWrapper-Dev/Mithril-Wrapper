@@ -1,0 +1,350 @@
+-- The CXX compiler identification is AppleClang 17.0.0.17000013
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: /usr/bin/c++ - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- Mithril build commit id: 7ed5625533af3faa0853b5c55ad19c646b4fd5a3
+-- The OBJCXX compiler identification is AppleClang 17.0.0.17000013
+-- Detecting OBJCXX compiler ABI info
+-- Detecting OBJCXX compiler ABI info - done
+-- Check for working OBJCXX compiler: /usr/bin/c++ - skipped
+-- MoltenVK headers: /opt/homebrew/include
+-- MoltenVK library: /opt/homebrew/lib/libMoltenVK.dylib
+-- The C compiler identification is AppleClang 17.0.0.17000013
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Check for working C compiler: /usr/bin/cc - skipped
+-- Detecting C compile features
+-- Detecting C compile features - done
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
+-- Found Threads: TRUE
+-- SPIRV-Cross: Finding Git version for SPIRV-Cross.
+-- Found Git: /opt/homebrew/bin/git (found version "2.55.0")
+-- SPIRV-Cross: Git hash: 6c09849
+-- Configuring done (5.9s)
+-- Generating done (0.0s)
+-- Build files have been written to: /Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/build-minecraft-e2e-native
+[1/89] Building CXX object Mithril-Wrapper-cpp/3rdparty/glslang/SPIRV/CMakeFiles/SPIRV.dir/__/glslang/stub.cpp.o
+[2/89] Building CXX object Mithril-Wrapper-cpp/3rdparty/glslang/glslang/CMakeFiles/glslang-default-resource-limits.dir/ResourceLimits/resource_limits_c.cpp.o
+[3/89] Building CXX object Mithril-Wrapper-cpp/3rdparty/glslang/glslang/CMakeFiles/glslang-default-resource-limits.dir/ResourceLimits/ResourceLimits.cpp.o
+[4/89] Building CXX object Mithril-Wrapper-cpp/3rdparty/glslang/glslang/CMakeFiles/glslang.dir/cmake_pch.hxx.pch
+[5/89] Building CXX object Mithril-Wrapper-cpp/3rdparty/SPIRV-Cross/CMakeFiles/spirv-cross-core.dir/spirv_cfg.cpp.o
+[6/89] Building CXX object Mithril-Wrapper-cpp/3rdparty/glslang/glslang/CMakeFiles/glslang.dir/CInterface/glslang_c_interface.cpp.o
+[7/89] Building CXX object Mithril-Wrapper-cpp/3rdparty/glslang/glslang/CMakeFiles/glslang.dir/GenericCodeGen/CodeGen.cpp.o
+[8/89] Building CXX object Mithril-Wrapper-cpp/3rdparty/SPIRV-Cross/CMakeFiles/spirv-cross-core.dir/spirv_cross_parsed_ir.cpp.o
+[9/89] Building CXX object Mithril-Wrapper-cpp/3rdparty/SPIRV-Cross/CMakeFiles/spirv-cross-core.dir/spirv_parser.cpp.o
+[10/89] Building CXX object Mithril-Wrapper-cpp/3rdparty/glslang/glslang/CMakeFiles/glslang.dir/GenericCodeGen/Link.cpp.o
+[11/89] Building CXX object Mithril-Wrapper-cpp/3rdparty/glslang/glslang/CMakeFiles/glslang.dir/OSDependent/Unix/ossource.cpp.o
+[12/89] Building CXX object Mithril-Wrapper-cpp/3rdparty/glslang/glslang/CMakeFiles/glslang.dir/MachineIndependent/attribute.cpp.o
+[13/89] Building CXX object Mithril-Wrapper-cpp/3rdparty/glslang/glslang/CMakeFiles/glslang.dir/MachineIndependent/InfoSink.cpp.o
+[14/89] Building CXX object Mithril-Wrapper-cpp/3rdparty/glslang/glslang/CMakeFiles/glslang.dir/MachineIndependent/Constant.cpp.o
+[15/89] Building CXX object Mithril-Wrapper-cpp/3rdparty/SPIRV-Cross/CMakeFiles/spirv-cross-core.dir/spirv_cross.cpp.o
+[16/89] Building CXX object Mithril-Wrapper-cpp/3rdparty/glslang/glslang/CMakeFiles/glslang.dir/MachineIndependent/IntermTraverse.cpp.o
+[17/89] Building CXX object Mithril-Wrapper-cpp/3rdparty/glslang/glslang/CMakeFiles/glslang.dir/MachineIndependent/glslang_tab.cpp.o
+[18/89] Building CXX object Mithril-Wrapper-cpp/3rdparty/glslang/glslang/CMakeFiles/glslang.dir/MachineIndependent/ParseContextBase.cpp.o
+[19/89] Building CXX object Mithril-Wrapper-cpp/3rdparty/glslang/glslang/CMakeFiles/glslang.dir/MachineIndependent/iomapper.cpp.o
+[20/89] Building CXX object Mithril-Wrapper-cpp/3rdparty/glslang/glslang/CMakeFiles/glslang.dir/MachineIndependent/Intermediate.cpp.o
+[21/89] Building CXX object Mithril-Wrapper-cpp/3rdparty/glslang/glslang/CMakeFiles/glslang.dir/MachineIndependent/PoolAlloc.cpp.o
+[22/89] Building CXX object Mithril-Wrapper-cpp/3rdparty/glslang/glslang/CMakeFiles/glslang.dir/MachineIndependent/RemoveTree.cpp.o
+[23/89] Building CXX object Mithril-Wrapper-cpp/3rdparty/glslang/glslang/CMakeFiles/glslang.dir/MachineIndependent/Scan.cpp.o
+[24/89] Building CXX object Mithril-Wrapper-cpp/3rdparty/glslang/glslang/CMakeFiles/glslang.dir/MachineIndependent/SpirvIntrinsics.cpp.o
+[25/89] Building CXX object Mithril-Wrapper-cpp/3rdparty/glslang/glslang/CMakeFiles/glslang.dir/MachineIndependent/Initialize.cpp.o
+[26/89] Building CXX object Mithril-Wrapper-cpp/3rdparty/glslang/glslang/CMakeFiles/glslang.dir/MachineIndependent/ShaderLang.cpp.o
+[27/89] Building CXX object Mithril-Wrapper-cpp/3rdparty/glslang/glslang/CMakeFiles/glslang.dir/MachineIndependent/intermOut.cpp.o
+[28/89] Building CXX object Mithril-Wrapper-cpp/3rdparty/glslang/glslang/CMakeFiles/glslang.dir/MachineIndependent/Versions.cpp.o
+[29/89] Building CXX object Mithril-Wrapper-cpp/3rdparty/glslang/glslang/CMakeFiles/glslang.dir/MachineIndependent/SymbolTable.cpp.o
+[30/89] Building CXX object Mithril-Wrapper-cpp/3rdparty/glslang/glslang/CMakeFiles/glslang.dir/MachineIndependent/limits.cpp.o
+[31/89] Building CXX object Mithril-Wrapper-cpp/3rdparty/glslang/glslang/CMakeFiles/glslang.dir/MachineIndependent/parseConst.cpp.o
+[32/89] Building CXX object Mithril-Wrapper-cpp/3rdparty/glslang/glslang/CMakeFiles/glslang.dir/MachineIndependent/ParseHelper.cpp.o
+[33/89] Building CXX object Mithril-Wrapper-cpp/3rdparty/glslang/glslang/CMakeFiles/glslang.dir/MachineIndependent/preprocessor/PpAtom.cpp.o
+[34/89] Building CXX object Mithril-Wrapper-cpp/3rdparty/glslang/glslang/CMakeFiles/glslang.dir/MachineIndependent/reflection.cpp.o
+[35/89] Building CXX object Mithril-Wrapper-cpp/3rdparty/glslang/glslang/CMakeFiles/glslang.dir/MachineIndependent/preprocessor/PpContext.cpp.o
+[36/89] Building CXX object Mithril-Wrapper-cpp/3rdparty/glslang/glslang/CMakeFiles/glslang.dir/MachineIndependent/preprocessor/Pp.cpp.o
+[37/89] Building CXX object Mithril-Wrapper-cpp/3rdparty/glslang/glslang/CMakeFiles/glslang.dir/MachineIndependent/preprocessor/PpScanner.cpp.o
+[38/89] Building CXX object Mithril-Wrapper-cpp/3rdparty/glslang/glslang/CMakeFiles/glslang.dir/MachineIndependent/linkValidate.cpp.o
+[39/89] Building CXX object Mithril-Wrapper-cpp/3rdparty/glslang/glslang/CMakeFiles/glslang.dir/MachineIndependent/preprocessor/PpTokens.cpp.o
+[40/89] Building CXX object Mithril-Wrapper-cpp/3rdparty/glslang/glslang/CMakeFiles/glslang.dir/MachineIndependent/propagateNoContraction.cpp.o
+[41/89] Building CXX object Mithril-Wrapper-cpp/3rdparty/glslang/glslang/CMakeFiles/glslang.dir/__/SPIRV/Logger.cpp.o
+[42/89] Building CXX object Mithril-Wrapper-cpp/3rdparty/glslang/glslang/CMakeFiles/glslang.dir/__/SPIRV/InReadableOrder.cpp.o
+[43/89] Building CXX object Mithril-Wrapper-cpp/3rdparty/glslang/glslang/CMakeFiles/glslang.dir/__/SPIRV/SpvTools.cpp.o
+[44/89] Building CXX object Mithril-Wrapper-cpp/3rdparty/glslang/glslang/CMakeFiles/glslang.dir/__/SPIRV/doc.cpp.o
+[45/89] Building CXX object Mithril-Wrapper-cpp/3rdparty/glslang/glslang/CMakeFiles/glslang.dir/__/SPIRV/SpvPostProcess.cpp.o
+[46/89] Building CXX object Mithril-Wrapper-cpp/3rdparty/glslang/glslang/CMakeFiles/glslang.dir/__/SPIRV/disassemble.cpp.o
+[47/89] Building CXX object CMakeFiles/mithril.dir/Mithril-Wrapper-cpp/MG_Impl/Log.cpp.o
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Impl/Log.cpp:138:9: warning: address of function 'backtrace' will always evaluate to 'true' [-Wpointer-bool-conversion]
+  138 |     if (backtrace) n = backtrace(frames, kMaxFrames);
+      |     ~~  ^~~~~~~~~
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Impl/Log.cpp:138:9: note: prefix with the address-of operator to silence this warning
+  138 |     if (backtrace) n = backtrace(frames, kMaxFrames);
+      |         ^
+      |         &
+1 warning generated.
+[48/89] Building CXX object Mithril-Wrapper-cpp/3rdparty/glslang/glslang/CMakeFiles/glslang.dir/__/SPIRV/CInterface/spirv_c_interface.cpp.o
+[49/89] Building CXX object CMakeFiles/mithril.dir/Mithril-Wrapper-cpp/MG_Impl/init.cpp.o
+[50/89] Building CXX object CMakeFiles/mithril.dir/Mithril-Wrapper-cpp/MG_Impl/gl.cpp.o
+[51/89] Building CXX object CMakeFiles/mithril.dir/Mithril-Wrapper-cpp/MG_Impl/Getter.cpp.o
+[52/89] Building CXX object Mithril-Wrapper-cpp/3rdparty/glslang/glslang/CMakeFiles/glslang.dir/__/SPIRV/SpvBuilder.cpp.o
+[53/89] Building CXX object CMakeFiles/mithril.dir/Mithril-Wrapper-cpp/MG_Impl/Buffer.cpp.o
+[54/89] Building CXX object CMakeFiles/mithril.dir/Mithril-Wrapper-cpp/MG_Impl/VertexArray.cpp.o
+[55/89] Building CXX object Mithril-Wrapper-cpp/3rdparty/glslang/glslang/CMakeFiles/glslang.dir/__/SPIRV/GlslangToSpv.cpp.o
+[56/89] Building CXX object CMakeFiles/mithril.dir/Mithril-Wrapper-cpp/MG_Impl/Program.cpp.o
+[57/89] Building CXX object CMakeFiles/mithril.dir/Mithril-Wrapper-cpp/MG_Impl/Texture.cpp.o
+[58/89] Building CXX object CMakeFiles/mithril.dir/Mithril-Wrapper-cpp/MG_Impl/Drawing.cpp.o
+[59/89] Building CXX object CMakeFiles/mithril.dir/Mithril-Wrapper-cpp/MG_Impl/Framebuffer.cpp.o
+[60/89] Building CXX object CMakeFiles/mithril.dir/Mithril-Wrapper-cpp/MG_Impl/Shader.cpp.o
+[61/89] Building CXX object CMakeFiles/mithril.dir/Mithril-Wrapper-cpp/MG_Impl/Stubs.cpp.o
+[62/89] Building CXX object CMakeFiles/mithril.dir/Mithril-Wrapper-cpp/MG_Impl/GL46_Compat.cpp.o
+[63/89] Building CXX object CMakeFiles/mithril.dir/Mithril-Wrapper-cpp/MG_Impl/Debug.cpp.o
+[64/89] Building CXX object CMakeFiles/mithril.dir/Mithril-Wrapper-cpp/MG_Impl/lookup.cpp.o
+[65/89] Building CXX object CMakeFiles/mithril.dir/Mithril-Wrapper-cpp/MG_State/Caps.cpp.o
+[66/89] Building CXX object CMakeFiles/mithril.dir/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/FormatMap.cpp.o
+[67/89] Building CXX object CMakeFiles/mithril.dir/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/Std140.cpp.o
+[68/89] Building CXX object CMakeFiles/mithril.dir/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/UniformArena.cpp.o
+[69/89] Building CXX object CMakeFiles/mithril.dir/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/Device.cpp.o
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/Device.cpp:561:6: warning: unused function 'has_layer' [-Wunused-function]
+  561 | bool has_layer(const std::vector<VkLayerProperties>& props, const char* name) {
+      |      ^~~~~~~~~
+1 warning generated.
+[70/89] Building CXX object CMakeFiles/mithril.dir/Mithril-Wrapper-cpp/MG_State/State.cpp.o
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_State/State.cpp:516:21: warning: calling '__builtin_return_address' with a nonzero argument is unsafe [-Wframe-address]
+  516 |         reportRa(1, __builtin_return_address(1));
+      |                     ^~~~~~~~~~~~~~~~~~~~~~~~~~~
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_State/State.cpp:517:21: warning: calling '__builtin_return_address' with a nonzero argument is unsafe [-Wframe-address]
+  517 |         reportRa(2, __builtin_return_address(2));
+      |                     ^~~~~~~~~~~~~~~~~~~~~~~~~~~
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_State/State.cpp:518:21: warning: calling '__builtin_return_address' with a nonzero argument is unsafe [-Wframe-address]
+  518 |         reportRa(3, __builtin_return_address(3));
+      |                     ^~~~~~~~~~~~~~~~~~~~~~~~~~~
+3 warnings generated.
+[71/89] Building CXX object CMakeFiles/mithril.dir/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/Resources.cpp.o
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/Resources.cpp:154:60: warning: missing field 'pNext' initializer [-Wmissing-field-initializers]
+  154 |     VkMemoryBarrier before{VK_STRUCTURE_TYPE_MEMORY_BARRIER};
+      |                                                            ^
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/Resources.cpp:167:59: warning: missing field 'pNext' initializer [-Wmissing-field-initializers]
+  167 |     VkMemoryBarrier after{VK_STRUCTURE_TYPE_MEMORY_BARRIER};
+      |                                                           ^
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/Resources.cpp:1550:69: warning: missing field 'pNext' initializer [-Wmissing-field-initializers]
+ 1550 |         VkBufferCreateInfo bi{ VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
+      |                                                                     ^
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/Resources.cpp:1554:74: warning: missing field 'pNext' initializer [-Wmissing-field-initializers]
+ 1554 |         VkMemoryAllocateInfo mai{ VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO };
+      |                                                                          ^
+4 warnings generated.
+[72/89] Building CXX object CMakeFiles/mithril.dir/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/RenderPassCompat.cpp.o
+[73/89] Building CXX object CMakeFiles/mithril.dir/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/DescriptorSet.cpp.o
+[74/89] Building CXX object CMakeFiles/mithril.dir/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/CommandStream.cpp.o
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/CommandStream.cpp:3386:40: warning: 'query_slots' has C-linkage specified, but returns user-defined type 'std::unordered_map<GLuint, QuerySlot> &' (aka 'unordered_map<unsigned int, mithril::vk::(anonymous namespace)::QuerySlot> &') which is incompatible with C [-Wreturn-type-c-linkage]
+ 3386 | std::unordered_map<GLuint, QuerySlot>& query_slots() {
+      |                                        ^
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/CommandStream.cpp:3391:27: warning: 'pending_resets' has C-linkage specified, but returns user-defined type 'std::vector<VkQueryPool> &' (aka 'vector<VkQueryPool_T *> &') which is incompatible with C [-Wreturn-type-c-linkage]
+ 3391 | std::vector<VkQueryPool>& pending_resets() {
+      |                           ^
+2 warnings generated.
+[75/89] Building CXX object CMakeFiles/mithril.dir/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/Pipeline.cpp.o
+[76/89] Building CXX object CMakeFiles/mithril.dir/Mithril-Wrapper-cpp/MG_Impl/EGLConfig.cpp.o
+[77/89] Building CXX object CMakeFiles/mithril.dir/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/Reflect.cpp.o
+[78/89] Building CXX object CMakeFiles/mithril.dir/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/SwapchainCommon.cpp.o
+[79/89] Building OBJCXX object CMakeFiles/mithril.dir/Mithril-Wrapper-cpp/egl/SurfaceMetal.mm.o
+[80/89] Building CXX object CMakeFiles/mithril.dir/Mithril-Wrapper-cpp/egl/SwapchainHelper.cpp.o
+[81/89] Building CXX object CMakeFiles/mithril.dir/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/ImageOps.cpp.o
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/ImageOps.cpp:1511:76: warning: missing field 'pNext' initializer [-Wmissing-field-initializers]
+ 1511 |     VkShaderModuleCreateInfo vm{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
+      |                                                                            ^
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/ImageOps.cpp:1522:91: warning: missing field 'pNext' initializer [-Wmissing-field-initializers]
+ 1522 |     VkDescriptorSetLayoutCreateInfo sl{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
+      |                                                                                           ^
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/ImageOps.cpp:1525:80: warning: missing field 'pNext' initializer [-Wmissing-field-initializers]
+ 1525 |     VkPipelineLayoutCreateInfo pl{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+      |                                                                                ^
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/ImageOps.cpp:1530:68: warning: missing field 'pNext' initializer [-Wmissing-field-initializers]
+ 1530 |         VkSamplerCreateInfo s{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
+      |                                                                    ^
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/ImageOps.cpp:1547:80: warning: missing field 'pNext' initializer [-Wmissing-field-initializers]
+ 1547 |     VkDescriptorPoolCreateInfo pc{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
+      |                                                                                ^
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/ImageOps.cpp:1552:64: warning: missing field 'pNext' initializer [-Wmissing-field-initializers]
+ 1552 |     VkBufferCreateInfo bci{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+      |                                                                ^
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/ImageOps.cpp:1565:68: warning: missing field 'pNext' initializer [-Wmissing-field-initializers]
+ 1565 |     VkMemoryAllocateInfo mal{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+      |                                                                    ^
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/ImageOps.cpp:1597:72: warning: missing field 'pNext' initializer [-Wmissing-field-initializers]
+ 1597 |     VkRenderPassCreateInfo rp{VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO};
+      |                                                                        ^
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/ImageOps.cpp:1620:102: warning: missing field 'pNext' initializer [-Wmissing-field-initializers]
+ 1620 |     VkPipelineVertexInputStateCreateInfo vi{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
+      |                                                                                                      ^
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/ImageOps.cpp:1623:106: warning: missing field 'pNext' initializer [-Wmissing-field-initializers]
+ 1623 |     VkPipelineInputAssemblyStateCreateInfo ia{VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
+      |                                                                                                          ^
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/ImageOps.cpp:1625:95: warning: missing field 'pNext' initializer [-Wmissing-field-initializers]
+ 1625 |     VkPipelineViewportStateCreateInfo vp{VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO};
+      |                                                                                               ^
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/ImageOps.cpp:1627:105: warning: missing field 'pNext' initializer [-Wmissing-field-initializers]
+ 1627 |     VkPipelineRasterizationStateCreateInfo rs{VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
+      |                                                                                                         ^
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/ImageOps.cpp:1630:101: warning: missing field 'pNext' initializer [-Wmissing-field-initializers]
+ 1630 |     VkPipelineMultisampleStateCreateInfo ms{VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
+      |                                                                                                     ^
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/ImageOps.cpp:1636:100: warning: missing field 'pNext' initializer [-Wmissing-field-initializers]
+ 1636 |     VkPipelineColorBlendStateCreateInfo bl{VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
+      |                                                                                                    ^
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/ImageOps.cpp:1639:93: warning: missing field 'pNext' initializer [-Wmissing-field-initializers]
+ 1639 |     VkPipelineDynamicStateCreateInfo ds{VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
+      |                                                                                             ^
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/ImageOps.cpp:1641:84: warning: missing field 'pNext' initializer [-Wmissing-field-initializers]
+ 1641 |     VkGraphicsPipelineCreateInfo gp{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
+      |                                                                                    ^
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/ImageOps.cpp:1699:74: warning: missing field 'pNext' initializer [-Wmissing-field-initializers]
+ 1699 |         VkImageViewCreateInfo vc{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+      |                                                                          ^
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/ImageOps.cpp:1741:67: warning: missing field 'pNext' initializer [-Wmissing-field-initializers]
+ 1741 |     VkImageMemoryBarrier sb{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+      |                                                                   ^
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/ImageOps.cpp:1752:67: warning: missing field 'pNext' initializer [-Wmissing-field-initializers]
+ 1752 |     VkImageMemoryBarrier db{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+      |                                                                   ^
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/ImageOps.cpp:1783:86: warning: missing field 'pNext' initializer [-Wmissing-field-initializers]
+ 1783 |         VkDescriptorSetAllocateInfo ai{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+      |                                                                                      ^
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/ImageOps.cpp:1797:66: warning: missing field 'pNext' initializer [-Wmissing-field-initializers]
+ 1797 |     VkWriteDescriptorSet w{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+      |                                                                  ^
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/ImageOps.cpp:1808:77: warning: missing field 'pNext' initializer [-Wmissing-field-initializers]
+ 1808 |         VkFramebufferCreateInfo fc{VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};
+      |                                                                             ^
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/ImageOps.cpp:1822:71: warning: missing field 'pNext' initializer [-Wmissing-field-initializers]
+ 1822 |     VkRenderPassBeginInfo rpb{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
+      |                                                                       ^
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/ImageOps.cpp:1883:102: warning: missing field 'pNext' initializer [-Wmissing-field-initializers]
+ 1883 |     VkPipelineVertexInputStateCreateInfo vi{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
+      |                                                                                                      ^
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/ImageOps.cpp:1887:106: warning: missing field 'pNext' initializer [-Wmissing-field-initializers]
+ 1887 |     VkPipelineInputAssemblyStateCreateInfo ia{VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
+      |                                                                                                          ^
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/ImageOps.cpp:1889:95: warning: missing field 'pNext' initializer [-Wmissing-field-initializers]
+ 1889 |     VkPipelineViewportStateCreateInfo vp{VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO};
+      |                                                                                               ^
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/ImageOps.cpp:1891:105: warning: missing field 'pNext' initializer [-Wmissing-field-initializers]
+ 1891 |     VkPipelineRasterizationStateCreateInfo rs{VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
+      |                                                                                                         ^
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/ImageOps.cpp:1894:101: warning: missing field 'pNext' initializer [-Wmissing-field-initializers]
+ 1894 |     VkPipelineMultisampleStateCreateInfo ms{VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
+      |                                                                                                     ^
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/ImageOps.cpp:1896:104: warning: missing field 'pNext' initializer [-Wmissing-field-initializers]
+ 1896 |     VkPipelineDepthStencilStateCreateInfo ds{VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
+      |                                                                                                        ^
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/ImageOps.cpp:1900:100: warning: missing field 'pNext' initializer [-Wmissing-field-initializers]
+ 1900 |     VkPipelineColorBlendStateCreateInfo cb{VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
+      |                                                                                                    ^
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/ImageOps.cpp:1903:94: warning: missing field 'pNext' initializer [-Wmissing-field-initializers]
+ 1903 |     VkPipelineDynamicStateCreateInfo dyn{VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
+      |                                                                                              ^
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/ImageOps.cpp:1919:87: warning: missing field 'pNext' initializer [-Wmissing-field-initializers]
+ 1919 |     VkPipelineRenderingCreateInfo rci{VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO};
+      |                                                                                       ^
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/ImageOps.cpp:1936:84: warning: missing field 'pNext' initializer [-Wmissing-field-initializers]
+ 1936 |     VkGraphicsPipelineCreateInfo gi{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
+      |                                                                                    ^
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/ImageOps.cpp:1993:74: warning: missing field 'pNext' initializer [-Wmissing-field-initializers]
+ 1993 |         VkImageViewCreateInfo vc{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+      |                                                                          ^
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/ImageOps.cpp:2013:71: warning: missing field 'pNext' initializer [-Wmissing-field-initializers]
+ 2013 |         VkImageMemoryBarrier mb{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+      |                                                                       ^
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/ImageOps.cpp:2063:86: warning: missing field 'pNext' initializer [-Wmissing-field-initializers]
+ 2063 |         VkDescriptorSetAllocateInfo ai{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+      |                                                                                      ^
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/ImageOps.cpp:2075:66: warning: missing field 'pNext' initializer [-Wmissing-field-initializers]
+ 2075 |     VkWriteDescriptorSet w{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+      |                                                                  ^
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/ImageOps.cpp:2129:76: warning: missing field 'pNext' initializer [-Wmissing-field-initializers]
+ 2129 |     VkShaderModuleCreateInfo vm{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
+      |                                                                            ^
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/ImageOps.cpp:2166:80: warning: missing field 'pNext' initializer [-Wmissing-field-initializers]
+ 2166 |         VkShaderModuleCreateInfo vm{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
+      |                                                                                ^
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/ImageOps.cpp:2171:84: warning: missing field 'pNext' initializer [-Wmissing-field-initializers]
+ 2171 |         VkPipelineLayoutCreateInfo pl{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+      |                                                                                    ^
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/ImageOps.cpp:2173:106: warning: missing field 'pNext' initializer [-Wmissing-field-initializers]
+ 2173 |         VkPipelineVertexInputStateCreateInfo vi{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
+      |                                                                                                          ^
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/ImageOps.cpp:2174:110: warning: missing field 'pNext' initializer [-Wmissing-field-initializers]
+ 2174 |         VkPipelineInputAssemblyStateCreateInfo ia{VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
+      |                                                                                                              ^
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/ImageOps.cpp:2176:99: warning: missing field 'pNext' initializer [-Wmissing-field-initializers]
+ 2176 |         VkPipelineViewportStateCreateInfo vp{VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO};
+      |                                                                                                   ^
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/ImageOps.cpp:2178:109: warning: missing field 'pNext' initializer [-Wmissing-field-initializers]
+ 2178 |         VkPipelineRasterizationStateCreateInfo rs{VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
+      |                                                                                                             ^
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/ImageOps.cpp:2181:105: warning: missing field 'pNext' initializer [-Wmissing-field-initializers]
+ 2181 |         VkPipelineMultisampleStateCreateInfo ms{VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
+      |                                                                                                         ^
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/ImageOps.cpp:2183:104: warning: missing field 'pNext' initializer [-Wmissing-field-initializers]
+ 2183 |         VkPipelineColorBlendStateCreateInfo cb{VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
+      |                                                                                                        ^
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/ImageOps.cpp:2187:98: warning: missing field 'pNext' initializer [-Wmissing-field-initializers]
+ 2187 |         VkPipelineDynamicStateCreateInfo dyn{VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
+      |                                                                                                  ^
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/ImageOps.cpp:2189:91: warning: missing field 'pNext' initializer [-Wmissing-field-initializers]
+ 2189 |         VkPipelineRenderingCreateInfo rci{VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO};
+      |                                                                                           ^
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/ImageOps.cpp:2191:88: warning: missing field 'pNext' initializer [-Wmissing-field-initializers]
+ 2191 |         VkGraphicsPipelineCreateInfo gi{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
+      |                                                                                        ^
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/ImageOps.cpp:2192:100: warning: missing field 'pNext' initializer [-Wmissing-field-initializers]
+ 2192 |         VkPipelineShaderStageCreateInfo st[2]={{VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO},{VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO}};
+      |                                                                                                    ^
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/ImageOps.cpp:2192:154: warning: missing field 'pNext' initializer [-Wmissing-field-initializers]
+ 2192 |         VkPipelineShaderStageCreateInfo st[2]={{VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO},{VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO}};
+      |                                                                                                                                                          ^
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/ImageOps.cpp:2238:80: warning: missing field 'pNext' initializer [-Wmissing-field-initializers]
+ 2238 |         VkShaderModuleCreateInfo vm{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
+      |                                                                                ^
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/ImageOps.cpp:2243:106: warning: missing field 'pNext' initializer [-Wmissing-field-initializers]
+ 2243 |         VkPipelineVertexInputStateCreateInfo vi{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
+      |                                                                                                          ^
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/ImageOps.cpp:2244:110: warning: missing field 'pNext' initializer [-Wmissing-field-initializers]
+ 2244 |         VkPipelineInputAssemblyStateCreateInfo ia{VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
+      |                                                                                                              ^
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/ImageOps.cpp:2246:99: warning: missing field 'pNext' initializer [-Wmissing-field-initializers]
+ 2246 |         VkPipelineViewportStateCreateInfo vp{VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO};
+      |                                                                                                   ^
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/ImageOps.cpp:2248:109: warning: missing field 'pNext' initializer [-Wmissing-field-initializers]
+ 2248 |         VkPipelineRasterizationStateCreateInfo rs{VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
+      |                                                                                                             ^
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/ImageOps.cpp:2251:105: warning: missing field 'pNext' initializer [-Wmissing-field-initializers]
+ 2251 |         VkPipelineMultisampleStateCreateInfo ms{VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
+      |                                                                                                         ^
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/ImageOps.cpp:2253:104: warning: missing field 'pNext' initializer [-Wmissing-field-initializers]
+ 2253 |         VkPipelineColorBlendStateCreateInfo cb{VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
+      |                                                                                                        ^
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/ImageOps.cpp:2257:98: warning: missing field 'pNext' initializer [-Wmissing-field-initializers]
+ 2257 |         VkPipelineDynamicStateCreateInfo dyn{VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
+      |                                                                                                  ^
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/ImageOps.cpp:2259:91: warning: missing field 'pNext' initializer [-Wmissing-field-initializers]
+ 2259 |         VkPipelineRenderingCreateInfo rci{VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO};
+      |                                                                                           ^
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/ImageOps.cpp:2261:88: warning: missing field 'pNext' initializer [-Wmissing-field-initializers]
+ 2261 |         VkGraphicsPipelineCreateInfo gi{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
+      |                                                                                        ^
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/ImageOps.cpp:2262:100: warning: missing field 'pNext' initializer [-Wmissing-field-initializers]
+ 2262 |         VkPipelineShaderStageCreateInfo st[2]={{VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO},{VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO}};
+      |                                                                                                    ^
+/Users/runner/work/Mithril-Wrapper/Mithril-Wrapper/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/ImageOps.cpp:2262:154: warning: missing field 'pNext' initializer [-Wmissing-field-initializers]
+ 2262 |         VkPipelineShaderStageCreateInfo st[2]={{VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO},{VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO}};
+      |                                                                                                                                                          ^
+63 warnings generated.
+[82/89] Building CXX object CMakeFiles/mithril.dir/Mithril-Wrapper-cpp/egl/egl.cpp.o
+[83/89] Building OBJCXX object CMakeFiles/mithril.dir/Mithril-Wrapper-cpp/MG_Backend/DirectVulkan/SwapchainMetal.mm.o
+[84/89] Building OBJCXX object CMakeFiles/mithril.dir/Mithril-Wrapper-cpp/MG_Impl/Getter_gpu.mm.o
+[85/89] Linking CXX static library Mithril-Wrapper-cpp/3rdparty/glslang/SPIRV/libSPIRV.a
+[86/89] Linking CXX static library Mithril-Wrapper-cpp/3rdparty/glslang/glslang/libglslang-default-resource-limits.a
+[87/89] Linking CXX static library Mithril-Wrapper-cpp/3rdparty/glslang/glslang/libglslang.a
+[88/89] Linking CXX static library Mithril-Wrapper-cpp/3rdparty/SPIRV-Cross/libspirv-cross-core.a
+[89/89] Linking CXX shared library libmithril.dylib
+ld: warning: ignoring duplicate libraries: 'Mithril-Wrapper-cpp/3rdparty/glslang/glslang/libglslang.a'

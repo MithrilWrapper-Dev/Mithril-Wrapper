@@ -1,0 +1,9 @@
+{
+  "failure_id": null,
+  "message": null,
+  "phase": null,
+  "recorded_at": null,
+  "retryable": false,
+  "schema_version": "1.0",
+  "status": "none"
+}

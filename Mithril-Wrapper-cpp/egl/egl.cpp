@@ -723,6 +723,24 @@ EGLBoolean eglSwapBuffers(EGLDisplay dpy, EGLSurface surface) {
     // were recorded since the last commit (e.g. eglWaitClient flushed this frame).
     swapchain_flush_and_commit();
 
+    // FIX (B1 diagnostic read the wrong value): snapshot the frame's recorded
+    // draw count HERE, immediately after the frame's command buffer has been
+    // submitted and BEFORE swapchain_present(). Present acquires the next
+    // swapchain image, and swapchain_acquire_color() calls
+    // ensure_command_buffer_recording() for the next frame slot, which resets
+    // encoder().drawCount to 0 (CommandStream.cpp: "new frame, draw counter
+    // starts at 0"). Reading the counter after that made every single frame
+    // report draws=0 — including frames that recorded thousands of draws —
+    // which is indistinguishable from "every draw was dropped" and sent the
+    // whole black-screen investigation down a dead end. Same reason
+    // backend_debug_frame_fbo_log() moved up: it drains the per-FBO counters
+    // that draw_recording_allowed() increments.
+    unsigned int frame_recorded_draws = 0;
+    if (mithril::g_state) {
+        backend_debug_frame_fbo_log();
+        frame_recorded_draws = mithril::vk::backend_get_recorded_draws();
+    }
+
     // Present the frame we just rendered, then acquire the next image for
     // the following frame. backend_present_and_acquire() calls
     // vkQueuePresentKHR followed by vkAcquireNextImageKHR.
@@ -759,7 +777,6 @@ EGLBoolean eglSwapBuffers(EGLDisplay dpy, EGLSurface surface) {
     // 用于真机确认首帧到底有没有出现过红色/黑色 clear 值，以及红屏是否由
     // glClearColor 驱动。仅前 60 帧输出，避免刷屏。
     if (mithril::g_state) {
-        backend_debug_frame_fbo_log();
         ++mithril::g_state->presentedFrames;
         bool diag_dump = std::getenv("MITHRIL_DUMP_BLIT") != nullptr;
         // The first-60-frames-only cap hid the steady state: those frames are
@@ -769,10 +786,11 @@ EGLBoolean eglSwapBuffers(EGLDisplay dpy, EGLSurface surface) {
         // then sample every 60th indefinitely.
         if (mithril::g_state->presentedFrames <= 60 ||
             (mithril::g_state->presentedFrames % 60u) == 0 || diag_dump) {
-            // B1: log the frame's recorded draw count. draw>0 => draws reached
-            // the command buffer but fragments aren't visible (depth/viewport/
-            // shader); draw==0 => draws were dropped before recording.
-            unsigned int draws = mithril::vk::backend_get_recorded_draws();
+            // B1: the frame's recorded draw count, snapshotted above BEFORE
+            // present reset it. draw>0 => draws reached the command buffer but
+            // fragments aren't visible (depth/viewport/shader/layout);
+            // draw==0 => draws were dropped before recording.
+            unsigned int draws = frame_recorded_draws;
             MITHRIL_LOG_WARN("vk-diag", "B1 present frame #%u clearColor=(%.3f %.3f %.3f %.3f) draws=%u",
                              mithril::g_state->presentedFrames,
                              mithril::g_state->clearColor[0],

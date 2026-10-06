@@ -1376,7 +1376,20 @@ void begin_render_pass(VkImageView* color_views, int color_count,
             // only ever shows the first few passes (all of them on the loading
             // screen) and then goes blind, which is exactly the window where a
             // new FBO shape appears and faults the GPU.
+            //
+            // FIX (diagnostic blindness): pure dedupe still hid the steady
+            // state. Over a whole session this printed FOUR lines for ~3500
+            // pass begins, all of them with curImg=0, so a user FBO that was
+            // misclassified as the default framebuffer on every single frame
+            // (fboTex=0 + the swapchain's colour format) produced the exact
+            // key of an already-seen early signature and stayed invisible.
+            // Re-emit the CURRENT signature once every 600 pass begins, so the
+            // steady state is always in the log and a signature that only ever
+            // appears in the steady state cannot hide behind an early one.
             static std::unordered_set<uint64_t> seenSigs;
+            static uint32_t sigBeginCount = 0;
+            ++sigBeginCount;
+            const bool periodic = (sigBeginCount % 600u) == 1u;
             {
                 uint64_t key = (uint64_t)(uint32_t)e.colorCount;
                 for (int i = 0; i < e.colorCount; ++i) key = key * 131u + (uint32_t)colorFmts[i];
@@ -1384,11 +1397,12 @@ void begin_render_pass(VkImageView* color_views, int color_count,
                 key = key * 131u + (e.depthView != VK_NULL_HANDLE);
                 key = key * 131u + (uint32_t)(e.activeSwapchain ? e.activeSwapchain->format : 0);
                 key = key * 131u + (uint32_t)(e.fboColorTexCount);
-                if (seenSigs.insert(key).second) {
+                if (seenSigs.insert(key).second || periodic) {
                 static uint32_t sigN = 0;
                 ++sigN;
-                MITHRIL_LOG_WARN("vk", "classic pass sig #%u: colors=%d fmt0=%d fmt1=%d depthFmt=%d depthView=%d swapFmt=%d curImg=%d fboTex=%d",
-                                 sigN, e.colorCount, (int)colorFmts[0],
+                MITHRIL_LOG_WARN("vk", "classic pass sig #%u%s: colors=%d fmt0=%d fmt1=%d depthFmt=%d depthView=%d swapFmt=%d curImg=%d fboTex=%d",
+                                 sigN, periodic ? " (periodic)" : "",
+                                 e.colorCount, (int)colorFmts[0],
                                  e.colorCount > 1 ? (int)colorFmts[1] : -1,
                                  (int)(e.depthView ? e.depthFormat : VK_FORMAT_UNDEFINED),
                                  e.depthView != VK_NULL_HANDLE,

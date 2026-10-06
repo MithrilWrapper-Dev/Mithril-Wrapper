@@ -1435,6 +1435,12 @@ layout(set=0,binding=0) uniform sampler2D uTex;
 void main(){ outColor = texture(uTex, vUv); }
 )";
 
+// Upper bound on swapchain images the blit-quad descriptor ring is sized for.
+// The sets are allocated once per index and never freed (a set still
+// referenced by an in-flight submit must not be freed), so the pool has to
+// cover every index at once.
+constexpr int kBlitQuadMaxFrames = 16;
+
 bool bq_compile_stage(EShLanguage stage, const char* src,
                       std::vector<uint32_t>& out) {
     static std::once_flag s_init;
@@ -1531,10 +1537,16 @@ bool bq_ensure_gpu() {
     if (!mk_sampler(VK_FILTER_NEAREST, g.sampNearest)) return false;
     if (!mk_sampler(VK_FILTER_LINEAR, g.sampLinear)) return false;
 
-    VkDescriptorPoolSize ps{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 4};
+    // One descriptor set per swapchain image index, allocated once and never
+    // freed (see blit_to_default_in_frame): freeing a set that a pending
+    // command buffer still references is illegal, so the pool must be able to
+    // hand out a set for every index without recycling. Sized well above the
+    // 2-3 images an Android swapchain uses so an unusually large image count
+    // cannot exhaust it mid-frame.
+    VkDescriptorPoolSize ps{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, kBlitQuadMaxFrames};
     VkDescriptorPoolCreateInfo pc{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
     pc.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
-    pc.maxSets = 4; pc.poolSizeCount = 1; pc.pPoolSizes = &ps;
+    pc.maxSets = kBlitQuadMaxFrames; pc.poolSizeCount = 1; pc.pPoolSizes = &ps;
     if (vkCreateDescriptorPool(b->device, &pc, nullptr, &g.pool) != VK_SUCCESS) return false;
 
     VkBufferCreateInfo bci{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
@@ -2018,23 +2030,45 @@ void blit_to_default_in_frame(VkImage src_image, VkFormat src_format, int src_w,
         return;
     }
 
-    // Descriptor set ring keyed by swapchain image (prior use complete on reacquire).
+    // FIX (per-frame black/white flicker, CRITICAL): the descriptor set is
+    // allocated ONCE per swapchain image index and then only UPDATED. The old
+    // code freed and reallocated it on every call, keyed by swapchain image.
+    // That is a Vulkan spec violation whenever the image index repeats sooner
+    // than the frame slot rotates: freeing a descriptor set that a pending
+    // command buffer still references (VUID-vkFreeDescriptorSets-00337) lets
+    // the pool hand the same memory straight back, and the
+    // vkUpdateDescriptorSets below rewrites view/sampler/layout while the GPU
+    // is still reading them for the PREVIOUS frame's blit. The composite then
+    // samples a torn descriptor — an empty or garbage texture — on exactly the
+    // frames where the index repeats, i.e. every frame when the swapchain
+    // keeps returning the same index (observed: curImg pinned to 0 for the
+    // whole session, log line "classic pass sig #N ... curImg=0"). That is a
+    // good frame / garbage frame alternation, which is the reported symptom.
+    // Keeping the set alive for the process lifetime removes the race
+    // entirely; the pool is sized for every index (see bq_ensure_gpu).
     if ((int)g.frameSets.size() < (int)sc->images.size())
         g.frameSets.resize(sc->images.size(), VK_NULL_HANDLE);
     int slot = sc->currentImage;
-    if (g.frameSets[slot] != VK_NULL_HANDLE) {
-        vkFreeDescriptorSets(b->device, g.pool, 1, &g.frameSets[slot]);
-        g.frameSets[slot] = VK_NULL_HANDLE;
-    }
-    VkDescriptorSetAllocateInfo ai{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
-    ai.descriptorPool = g.pool; ai.descriptorSetCount = 1; ai.pSetLayouts = &g.setLayout;
-    VkDescriptorSet set = VK_NULL_HANDLE;
-    if (vkAllocateDescriptorSets(b->device, &ai, &set) != VK_SUCCESS) {
-        MITHRIL_LOG_WARN("blit-quad", "inframe: descriptor alloc failed");
+    if (slot < 0 || slot >= (int)g.frameSets.size()) {
+        // The early check above bounds currentImage by views.size(); keep the
+        // ring indexed by the same range so the write below can never go out
+        // of bounds (a stale index here would corrupt the ring).
+        MITHRIL_LOG_WARN("blit-quad", "inframe: swapchain image index %d outside "
+                          "descriptor ring (%zu entries)", slot, g.frameSets.size());
         if (created_src_view) vkDestroyImageView(b->device, src_view, nullptr);
         return;
     }
-    g.frameSets[slot] = set;
+    VkDescriptorSet set = g.frameSets[slot];
+    if (set == VK_NULL_HANDLE) {
+        VkDescriptorSetAllocateInfo ai{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+        ai.descriptorPool = g.pool; ai.descriptorSetCount = 1; ai.pSetLayouts = &g.setLayout;
+        if (vkAllocateDescriptorSets(b->device, &ai, &set) != VK_SUCCESS) {
+            MITHRIL_LOG_WARN("blit-quad", "inframe: descriptor alloc failed");
+            if (created_src_view) vkDestroyImageView(b->device, src_view, nullptr);
+            return;
+        }
+        g.frameSets[slot] = set;
+    }
     VkDescriptorImageInfo dii{};
     dii.sampler = (filter == GL_LINEAR) ? g.sampLinear : g.sampNearest;
     dii.imageView = src_view; dii.imageLayout = want;

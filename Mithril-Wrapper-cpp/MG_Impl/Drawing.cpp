@@ -372,6 +372,37 @@ static bool prepare_draw(GLenum mode) {
         PD_FAIL(pd_f_pipe, "reason=no-pipeline colors=%d depth=%d", color_count, (int)depth_format);
     }
 
+    // If a pass is already open from a previous (kept-open) draw but it
+    // targets a different framebuffer, end it so we begin a fresh pass here.
+    //
+    // FIX (black screen / per-frame flicker, CRITICAL): this MUST happen
+    // BEFORE the attachment registration below. end_render_pass() reads
+    // e.fboColorTexIds[]/e.fboDepthTexId to barrier those images back to
+    // read-only layouts and then CLEARS the registration — so registering
+    // first made it act on the NEW target's textures (leaving them in a
+    // read-only layout as they are about to become color/depth attachments)
+    // and left begin_render_pass() with fboColorTexCount == 0, which is the
+    // backend's unambiguous "this is the default framebuffer == swapchain"
+    // marker (CommandStream.cpp swapchainBound / isSwapView). The
+    // misclassified pass then declared the SWAPCHAIN's colour format
+    // (B8G8R8A8_UNORM) instead of the texture's own, assumed a
+    // D32_SFLOAT_S8_UINT depth instead of the attachment's real format, and
+    // skipped both the barrier to COLOR_ATTACHMENT_OPTIMAL and the barrier
+    // back to SHADER_READ_ONLY at pass end — so the final glBlitFramebuffer
+    // composite sampled the scene texture from the wrong layout. Whether this
+    // fires depends on whether a pass happened to still be open at the FBO
+    // switch, which varies per frame: that is the difference between a steady
+    // black screen and a rapidly flickering one.
+    static GLuint s_passFBO = 0;
+    GLuint wantFBO = (GLuint)g_state->currentDrawFBO;
+    // True when the pass left open by the previous draw still targets this
+    // draw's framebuffer, so begin_render_pass() will coalesce into it.
+    const bool reuse_open_pass =
+        backend_render_pass_active() && s_passFBO == wantFBO;
+    if (backend_render_pass_active() && !reuse_open_pass) {
+        backend_end_render_pass();
+    }
+
     // FIX (root cause Y, CRITICAL): Register user-FBO attachment tex_ids so
     // begin_render_pass can barrier their images to attachment-optimal and
     // end_render_pass can barrier them back to read-only + update
@@ -382,15 +413,25 @@ static bool prepare_draw(GLenum mode) {
     // violation → MoltenVK drops the draw → black screen.
     // For FBO 0 (swapchain), pass null/0 to clear any stale registration;
     // the swapchain path's barriers are handled by the activeSwapchain block.
-    if (fbo) {
-        GLuint color_tex_ids[8] = {0};
-        for (int i = 0; i < color_count && i < 8; ++i) {
-            color_tex_ids[i] = fbo->colors[i].texture;
+    //
+    // Only publish it when begin_render_pass() will actually run: while a pass
+    // stays open across consecutive draws it coalesces them (begin_render_pass
+    // early-returns on passActive), and re-registering every draw cleared
+    // e.currentRenderPass — the handle Pipeline.cpp compiles a classic-path
+    // pipeline against — so every draw after the first in a pass saw NULL and
+    // silently fell back to a canonical pass. Skipping the redundant call keeps
+    // the live registration (which end_render_pass still needs) intact.
+    if (!reuse_open_pass) {
+        if (fbo) {
+            GLuint color_tex_ids[8] = {0};
+            for (int i = 0; i < color_count && i < 8; ++i) {
+                color_tex_ids[i] = fbo->colors[i].texture;
+            }
+            GLuint depth_tex_id = fbo->depth.texture;
+            backend_set_fbo_attachment_tex_ids(color_tex_ids, color_count, depth_tex_id);
+        } else {
+            backend_set_fbo_attachment_tex_ids(nullptr, 0, 0);
         }
-        GLuint depth_tex_id = fbo->depth.texture;
-        backend_set_fbo_attachment_tex_ids(color_tex_ids, color_count, depth_tex_id);
-    } else {
-        backend_set_fbo_attachment_tex_ids(nullptr, 0, 0);
     }
 
     if (std::getenv("MITHRIL_DRAW_TRACE")) {
@@ -400,14 +441,9 @@ static bool prepare_draw(GLenum mode) {
           g_state->currentDrawFBO,ct,im,w,h,(int)mode,g_state->currentProgram);
     }
 
-    // If a pass is already open from a previous (kept-open) draw but it
-    // targets a different framebuffer, end it so we begin a fresh pass here.
-    static GLuint s_passFBO = 0;
-    GLuint wantFBO = (GLuint)g_state->currentDrawFBO;
-    if (backend_render_pass_active() && s_passFBO != wantFBO) {
-        backend_end_render_pass();
-    }
-    // Begin render pass (Load action preserves previous contents).
+    // Begin render pass (Load action preserves previous contents). The
+    // pass that was still open for the previous target was already ended
+    // above, BEFORE this target's attachment ids were registered.
     backend_set_load_load();
     backend_begin_render_pass(colors, color_count, depth_view, w, h, 1);
     s_passFBO = wantFBO;
